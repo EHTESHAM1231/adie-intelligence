@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ADIE | Dataset Intelligence</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+
+<div id="loadingOverlay">
+    <div class="spinner"></div>
+    <div class="loading-text">PROCESSING CYCLE</div>
+    <div class="loading-subtext">ADIE Pipeline is analysing your dataset. This may take a moment...</div>
+    <div class="processing-bar"></div>
+</div>
+
+<div class="container">
+
+    <!-- ── HERO ─────────────────────────────────────────────────────────── -->
+    <header class="hero">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+            <div>
+                <h1>Dataset Intelligence.</h1>
+                <p>Automated diagnostics, intelligent repair, and predictive modelling for data scientists and researchers.</p>
+            </div>
+            <div style="text-align:right;">
+                <div style="font-size:0.8rem;font-weight:700;color:var(--accent);margin-bottom:0.5rem;">
+                    <i class="fas fa-user-circle"></i> {{ session['user']|upper }}
+                </div>
+                <a href="{{ url_for('logout') }}" class="btn btn-secondary"
+                   style="padding:0.5rem 1rem;font-size:0.7rem;border-color:rgba(255,255,255,0.2);color:white;">
+                    LOGOUT
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- ── FLASH MESSAGES ───────────────────────────────────────────────── -->
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for message in messages %}
+          <div class="alert alert-info"><i class="fas fa-info-circle"></i> {{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <!-- ── UPLOAD + DEFAULT DATASETS ────────────────────────────────────── -->
+    <div class="grid">
+
+        <!-- Upload card -->
+        <div class="card" id="uploadCard">
+            <h3><i class="fas fa-upload" style="color:var(--primary);"></i> New Analysis</h3>
+            <p style="color:var(--text-muted);margin-bottom:1.5rem;">
+                Upload a CSV or ZIP file to initiate the ADIE Pipeline.
+            </p>
+
+            <!-- Drag-and-drop zone -->
+            <div id="dropZone" class="upload-zone" style="cursor:pointer;position:relative;">
+                <i class="fas fa-cloud-upload-alt fa-3x" style="color:var(--border);margin-bottom:1rem;" id="dropIcon"></i>
+                <div style="font-weight:700;color:var(--text-main);" id="dropLabel">DRAG & DROP FILE HERE</div>
+                <p style="font-size:0.8rem;color:var(--text-muted);" id="dropSub">or click to browse — CSV or ZIP</p>
+                <input type="file" id="fileInput" accept=".csv,.zip"
+                       style="position:absolute;inset:0;opacity:0;cursor:pointer;">
+            </div>
+
+            <!-- File info panel (hidden until file selected) -->
+            <div id="fileInfoPanel" style="display:none;margin-top:1.5rem;">
+                <div style="padding:1rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:4px;margin-bottom:1rem;">
+                    <div style="display:flex;align-items:center;gap:0.75rem;">
+                        <i class="fas fa-file-csv" style="color:var(--success);font-size:1.5rem;"></i>
+                        <div>
+                            <div style="font-weight:700;font-size:0.9rem;" id="fileNameDisplay">—</div>
+                            <div style="font-size:0.75rem;color:var(--text-muted);" id="fileDimsDisplay">—</div>
+                        </div>
+                        <div style="margin-left:auto;">
+                            <span id="fileStatusBadge" style="padding:0.25rem 0.75rem;background:var(--accent);color:white;font-size:0.7rem;font-weight:700;border-radius:4px;">READY</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Target column selector -->
+                <div style="margin-bottom:1rem;">
+                    <label style="font-size:0.75rem;font-weight:700;color:var(--text-muted);display:block;margin-bottom:0.5rem;">
+                        <i class="fas fa-crosshairs" style="color:var(--primary);"></i> SELECT TARGET COLUMN
+                    </label>
+                    <select id="targetSelect" name="target_column"
+                            style="width:100%;padding:0.6rem 0.8rem;border:1px solid var(--border);border-radius:4px;font-size:0.85rem;background:white;">
+                        <option value="__auto__">⚡ Auto-detect (recommended)</option>
+                    </select>
+                    <div id="targetReason" style="font-size:0.72rem;color:var(--text-muted);margin-top:0.4rem;font-style:italic;"></div>
+                </div>
+
+                <!-- Preview table -->
+                <div id="previewSection" style="display:none;">
+                    <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);margin-bottom:0.5rem;">
+                        DATA PREVIEW (first 5 rows)
+                    </div>
+                    <div style="overflow-x:auto;max-height:200px;border:1px solid var(--border);border-radius:4px;">
+                        <table id="previewTable" style="width:100%;border-collapse:collapse;font-size:0.72rem;">
+                            <thead id="previewHead" style="background:var(--primary);color:white;position:sticky;top:0;"></thead>
+                            <tbody id="previewBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Submit button -->
+                <form id="analyzeForm" action="/analyze" method="post" enctype="multipart/form-data" style="margin-top:1rem;">
+                    <input type="hidden" name="target_column" id="hiddenTarget" value="__auto__">
+                    <input type="file" name="file" id="hiddenFileInput" style="display:none;" accept=".csv,.zip">
+                    <button type="submit" class="btn btn-primary" style="width:100%;padding:0.9rem;">
+                        <i class="fas fa-bolt"></i> ANALYSE DATASET
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Default datasets card -->
+        {% if default_datasets %}
+        <div class="card">
+            <h3><i class="fas fa-database" style="color:var(--primary);"></i> Default Datasets</h3>
+            <p style="color:var(--text-muted);margin-bottom:2rem;">
+                Quickly test the system with pre-validated data archives.
+            </p>
+            <form action="/analyze_default" method="post">
+                <select name="default_file"
+                        style="width:100%;padding:0.6rem 0.8rem;border:1px solid var(--border);border-radius:4px;font-size:0.85rem;margin-bottom:1.5rem;">
+                    {% for dataset in default_datasets %}
+                    <option value="{{ dataset }}">{{ dataset }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-primary" style="width:100%;">
+                    <i class="fas fa-bolt"></i> RUN PIPELINE
+                </button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- ── FEATURE CARDS ─────────────────────────────────────────────────── -->
+    <div class="grid">
+        <div class="card">
+            <h3><i class="fas fa-vial" style="color:var(--success);"></i> Diagnostics</h3>
+            <p style="color:var(--text-muted);font-size:0.9rem;">
+                9-point automated health check: missing values, outliers, class imbalance,
+                label noise, data leakage, and more.
+            </p>
+        </div>
+        <div class="card">
+            <h3><i class="fas fa-brain" style="color:var(--accent);"></i> Intelligent Engine</h3>
+            <p style="color:var(--text-muted);font-size:0.9rem;">
+                Data-driven strategy selection with confidence scores and human-readable
+                explanations for every decision made.
+            </p>
+        </div>
+        <div class="card">
+            <h3><i class="fas fa-shield-alt" style="color:var(--primary);"></i> Repair</h3>
+            <p style="color:var(--text-muted);font-size:0.9rem;">
+                Adaptive imputation, outlier capping, and smart encoding — no columns
+                silently dropped without explanation.
+            </p>
+        </div>
+        <div class="card">
+            <h3><i class="fas fa-chart-line" style="color:var(--warning);"></i> ML Benchmark</h3>
+            <p style="color:var(--text-muted);font-size:0.9rem;">
+                Train and compare multiple algorithms simultaneously with before/after
+                performance metrics and feature importance.
+            </p>
+        </div>
+    </div>
+
+    <footer style="margin-top:4rem;padding-top:2rem;border-top:1px solid var(--border);
+                   display:flex;justify-content:space-between;align-items:center;
+                   color:var(--text-muted);font-size:0.8rem;">
+        <div>&copy; 2026 ADIE Intelligence System.</div>
+        <div style="display:flex;gap:2rem;">
+            <a href="#" style="color:inherit;text-decoration:none;font-weight:600;">API DOCS</a>
+            <a href="#" style="color:inherit;text-decoration:none;font-weight:600;">ACCESSIBILITY</a>
+        </div>
+    </footer>
+</div>
+
+<!-- ── SCRIPTS ───────────────────────────────────────────────────────────── -->
+<script>
+(function () {
+    const dropZone      = document.getElementById('dropZone');
+    const fileInput     = document.getElementById('fileInput');
+    const fileInfoPanel = document.getElementById('fileInfoPanel');
+    const fileNameDisp  = document.getElementById('fileNameDisplay');
+    const fileDimsDisp  = document.getElementById('fileDimsDisplay');
+    const targetSelect  = document.getElementById('targetSelect');
+    const hiddenTarget  = document.getElementById('hiddenTarget');
+    const hiddenFile    = document.getElementById('hiddenFileInput');
+    const analyzeForm   = document.getElementById('analyzeForm');
+    const targetReason  = document.getElementById('targetReason');
+    const previewSec    = document.getElementById('previewSection');
+    const previewHead   = document.getElementById('previewHead');
+    const previewBody   = document.getElementById('previewBody');
+    const overlay       = document.getElementById('loadingOverlay');
+
+    let selectedFile = null;
+
+    // ── Drag-and-drop events ──────────────────────────────────────────────
+    ['dragenter','dragover'].forEach(evt => {
+        dropZone.addEventListener(evt, e => {
+            e.preventDefault();
+            dropZone.style.borderColor = 'var(--accent)';
+            dropZone.style.background  = '#f0fdf4';
+        });
+    });
+    ['dragleave','drop'].forEach(evt => {
+        dropZone.addEventListener(evt, e => {
+            e.preventDefault();
+            dropZone.style.borderColor = '';
+            dropZone.style.background  = '';
+        });
+    });
+    dropZone.addEventListener('drop', e => {
+        const files = e.dataTransfer.files;
+        if (files.length) handleFile(files[0]);
+    });
+    fileInput.addEventListener('change', () => {
+        if (fileInput.files.length) handleFile(fileInput.files[0]);
+    });
+
+    // ── Handle file selection ─────────────────────────────────────────────
+    function handleFile(file) {
+        selectedFile = file;
+        fileNameDisp.textContent = file.name;
+        fileDimsDisp.textContent = `${(file.size / 1024).toFixed(1)} KB`;
+        fileInfoPanel.style.display = 'block';
+        document.getElementById('dropLabel').textContent = 'FILE SELECTED';
+        document.getElementById('dropSub').textContent   = 'Click to change file';
+        document.getElementById('dropIcon').className    = 'fas fa-check-circle fa-3x';
+        document.getElementById('dropIcon').style.color  = 'var(--success)';
+
+        // Fetch preview + target detection
+        fetchPreview(file);
+    }
+
+    // ── AJAX preview ─────────────────────────────────────────────────────
+    function fetchPreview(file) {
+        fileDimsDisp.textContent = 'Analysing…';
+        const fd = new FormData();
+        fd.append('file', file);
+
+        fetch('/preview', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    fileDimsDisp.textContent = 'Could not read file: ' + data.error;
+                    return;
+                }
+
+                fileDimsDisp.textContent = `${data.rows.toLocaleString()} rows × ${data.cols} columns`;
+
+                // Populate target dropdown
+                targetSelect.innerHTML = '<option value="__auto__">⚡ Auto-detect (recommended)</option>';
+                const rec = data.target_detection.recommended;
+                data.columns.forEach(col => {
+                    const opt = document.createElement('option');
+                    opt.value = col;
+                    opt.textContent = col + (col === rec ? ' ★ recommended' : '');
+                    if (col === rec) opt.selected = true;
+                    targetSelect.appendChild(opt);
+                });
+                targetReason.textContent = '★ ' + data.target_detection.reason;
+
+                // Build preview table
+                if (data.preview && data.preview.length) {
+                    const cols = Object.keys(data.preview[0]);
+                    previewHead.innerHTML = '<tr>' + cols.map(c =>
+                        `<th style="padding:6px 10px;text-align:left;white-space:nowrap;">${c}</th>`
+                    ).join('') + '</tr>';
+                    previewBody.innerHTML = data.preview.map(row =>
+                        '<tr>' + cols.map(c =>
+                            `<td style="padding:5px 10px;border-top:1px solid var(--border);white-space:nowrap;">${row[c] ?? ''}</td>`
+                        ).join('') + '</tr>'
+                    ).join('');
+                    previewSec.style.display = 'block';
+                }
+            })
+            .catch(() => {
+                fileDimsDisp.textContent = 'Preview unavailable';
+            });
+    }
+
+    // ── Sync target selection to hidden input ─────────────────────────────
+    targetSelect.addEventListener('change', () => {
+        hiddenTarget.value = targetSelect.value;
+    });
+
+    // ── Form submission — attach the actual file ──────────────────────────
+    analyzeForm.addEventListener('submit', function (e) {
+        e.preventDefault();
+        if (!selectedFile) return;
+
+        // Transfer file to the hidden input via DataTransfer
+        const dt = new DataTransfer();
+        dt.items.add(selectedFile);
+        hiddenFile.files = dt.files;
+
+        // Sync target
+        hiddenTarget.value = targetSelect.value;
+
+        // Show loading overlay
+        overlay.querySelector('.loading-text').textContent    = 'ANALYSING DATASET';
+        overlay.querySelector('.loading-subtext').textContent = 'Running ADIE Pipeline Stage 1: Diagnostics…';
+        overlay.style.display = 'flex';
+
+        // Submit the real form
+        this.submit();
+    });
+
+    // ── Default dataset form loading overlay ──────────────────────────────
+    document.querySelectorAll('form[action="/analyze_default"]').forEach(form => {
+        form.addEventListener('submit', () => {
+            overlay.querySelector('.loading-text').textContent    = 'LOADING DATASET';
+            overlay.querySelector('.loading-subtext').textContent = 'Extracting archive and running diagnostics…';
+            overlay.style.display = 'flex';
+        });
+    });
+})();
+</script>
+</body>
+</html>

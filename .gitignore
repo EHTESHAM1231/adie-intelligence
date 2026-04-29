@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+.venv/
+*.egg-info/
+
+# Uploads (runtime data - not needed in repo)
+uploads/*.csv
+uploads/*.pkl
+uploads/*.json
+uploads/*.pdf
+uploads/*.txt
+uploads/*.zip
+uploads/version_*/
+uploads/car parts 50/
+
+# Keep uploads folder structure
+!uploads/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Deployment
+deploy/
+wsgi.py
+*.log
+logs/
+
+# Large files
+*.docx
+data/default/Data.Gov+-+FY25+Q4.csv
