@@ -1,706 +1,507 @@
-﻿# ADIE v2.0 — Full Project Understanding Document
-> **For use with ChatGPT or any AI assistant for further development, debugging, or extension.**
-> **Updated: April 2026 — Post-Upgrade (Intelligent Engine + Target Detection + System Evaluation + UI Overhaul)**
+﻿# ADIE v2.0 — Complete Project Understanding Document
+> **Purpose**: Give this entire file to ChatGPT (or any AI) so it fully understands the project for further development, debugging, or deployment help.
+> **Last Updated**: April 2026 — Deployed on Render
 
 ---
 
-## 1. What Is This Project?
+## 1. PROJECT OVERVIEW
 
-**ADIE** stands for **Automated Dataset Intelligence Engine**.
+**Name**: ADIE (Automated Dataset Intelligence Engine)
+**Type**: Flask web application (Python)
+**Purpose**: End-to-end ML data preparation platform that:
+- Auto-detects the target column (or lets user choose)
+- Diagnoses 9 categories of data quality issues
+- Makes intelligent, explainable strategy decisions (not hard-coded rules)
+- Repairs datasets through adaptive cleaning
+- Trains and benchmarks multiple ML algorithms
+- Evaluates its own effectiveness across datasets
+- Generates professional PDF reports
 
-It is a **Flask-based web application** that acts as an end-to-end, intelligent ML data preparation platform. A user uploads a CSV or ZIP dataset, and ADIE automatically:
-
-1. **Detects** the most likely target column (or lets the user choose)
-2. **Profiles** the dataset and makes data-driven strategy decisions with confidence scores
-3. **Diagnoses** 9 categories of data quality issues
-4. **Repairs** the dataset through an adaptive cleaning pipeline
-5. **Trains and benchmarks** multiple ML algorithms on both original and cleaned data
-6. **Explains** every decision it made (why this imputation? why this model?)
-7. **Evaluates itself** across multiple datasets to prove its effectiveness
-8. **Generates** a downloadable professional PDF report
-
-The platform is designed for **data scientists, researchers, and final-year project submissions** who want to quickly assess and prepare a dataset for machine learning without writing code.
+**Deployed at**: https://adie-intelligence.onrender.com (Render free tier)
+**Login**: admin / password123
 
 ---
 
-## 2. Tech Stack
+## 2. TECH STACK
 
-| Layer | Technology |
+| Component | Technology |
 |---|---|
-| Web Framework | Flask 2.3+ (Python) |
-| Data Processing | pandas 2.0+, numpy 1.24+, scipy 1.11+ |
-| Machine Learning | scikit-learn 1.3+ |
-| Class Imbalance | imbalanced-learn 0.11+ (SMOTE) |
-| Model Serialization | joblib 1.3+ |
+| Backend | Flask 2.3+ (Python 3.10+) |
+| ML | scikit-learn 1.3+, imbalanced-learn (SMOTE) |
+| Data | pandas 2.0+, numpy 1.24+, scipy 1.11+ |
 | PDF Reports | reportlab 4.0+ |
-| Frontend Templating | Jinja2 (built into Flask) |
-| Frontend Styling | Custom CSS (no framework) |
-| Charts | Chart.js (CDN) |
+| Production Server | Gunicorn |
+| Hosting | Render.com (free tier) |
+| Frontend | Jinja2 templates + custom CSS + Chart.js |
 | Icons | Font Awesome 6.4 (CDN) |
 | Fonts | Google Fonts: Plus Jakarta Sans, Space Grotesk |
-| Visualization (optional) | matplotlib, seaborn |
 
 ---
 
-## 3. Project File Structure
+## 3. FILE STRUCTURE
 
 ```
-AI-Project/
-+-- app.py                          # Main Flask application (16 routes)
-+-- requirements.txt                # Python dependencies
-+-- FINAL REPORT.docx               # Academic/project report document
-+-- PROJECT_UNDERSTANDING.md        # This file
+AI-Project/                         <-- THIS IS THE REPO ROOT
+|-- app.py                          Main Flask app (all 16 routes)
+|-- Procfile                        Render start command
+|-- render.yaml                     Render auto-config
+|-- requirements.txt                All Python dependencies
+|-- .gitignore                      Excludes uploads, large files
 |
-+-- utils/                          # Backend logic modules (7 files)
-|   +-- column_detector.py          # Classifies columns by type
-|   +-- data_analysis.py            # 9-point diagnostic engine
-|   +-- data_cleaning.py            # Adaptive cleaning pipeline
-|   +-- model_training.py           # Multi-algorithm training + evaluation
-|   +-- dataset_expert.py           # SWOT, domain detection, interventions
-|   +-- target_detector.py          # NEW: Intelligent target column detection
-|   +-- intelligent_engine.py       # NEW: Data-driven strategy selector
-|   +-- system_evaluator.py         # NEW: Self-evaluation across datasets
-|   +-- report_generator.py         # UPGRADED: PDF + text report generation
+|-- static/
+|   +-- style.css                   All CSS (16KB, emerald/charcoal theme)
 |
-+-- templates/                      # HTML pages (Jinja2)
-|   +-- splash.html                 # Landing page (auto-redirects)
-|   +-- auth.html                   # Login + Signup
-|   +-- index.html                  # UPGRADED: Dashboard with drag-drop + target selector
-|   +-- result.html                 # UPGRADED: Full analysis dashboard with 7 sections
+|-- templates/
+|   |-- splash.html                 Landing page (auto-redirects to login)
+|   |-- auth.html                   Login + Signup (shared template)
+|   |-- index.html                  Dashboard (drag-drop upload + target selector)
+|   +-- result.html                 Analysis dashboard (7 sections)
 |
-+-- static/
-|   +-- style.css                   # UPGRADED: All CSS with new components
+|-- utils/                          Backend modules (7 files)
+|   |-- column_detector.py          Classifies columns by type
+|   |-- data_analysis.py            9-point diagnostic engine
+|   |-- data_cleaning.py            Adaptive cleaning pipeline
+|   |-- model_training.py           Multi-algorithm training
+|   |-- dataset_expert.py           SWOT, domain detection, interventions
+|   |-- target_detector.py          Intelligent target column scoring
+|   |-- intelligent_engine.py       Weighted strategy selector + explainer
+|   |-- system_evaluator.py         Self-evaluation across datasets
+|   +-- report_generator.py         PDF + text report generation
 |
-+-- data/default/                   # Pre-loaded datasets
-|   +-- Data.Gov+-+FY25+Q4.csv
-|   +-- archive.zip
+|-- data/default/                   Pre-loaded sample datasets
+|   +-- archive.zip                 Small demo dataset (0.17MB)
 |
-+-- uploads/                        # Runtime storage (generated during use)
-|   +-- current_dataset.csv         # Active dataset
-|   +-- cleaned_dataset.csv         # Post-repair dataset
-|   +-- metadata.json               # Dataset metadata + target_col
-|   +-- diagnostics.json            # Diagnostic results + target_col
-|   +-- original_diagnostics.json   # Pre-repair diagnostics
-|   +-- expert_report.json          # SWOT + suitability
-|   +-- intelligent_analysis.json   # NEW: Profile + strategies + explanations
-|   +-- ml_results.json             # Model training results
-|   +-- eval_results.json           # NEW: System evaluation results
-|   +-- analysis_report.pdf         # UPGRADED: PDF report (was .txt)
-|   +-- best_model.pkl              # Best trained model
-|   +-- scaler.pkl                  # StandardScaler
-|   +-- encoder_mappings.pkl        # All encoders
-|   +-- users.json                  # User credentials
-|   +-- version_YYYYMMDD_HHMMSS/    # Versioned snapshots
+|-- uploads/                        Runtime storage (NOT in git)
+|   |-- current_dataset.csv         Active dataset being processed
+|   |-- cleaned_dataset.csv         Post-repair dataset
+|   |-- metadata.json               Dataset metadata + target_col
+|   |-- diagnostics.json            Diagnostic results
+|   |-- expert_report.json          SWOT + suitability
+|   |-- intelligent_analysis.json   Profile + strategies + explanations
+|   |-- ml_results.json             Model training results
+|   |-- eval_results.json           System evaluation results
+|   |-- best_model.pkl              Trained model
+|   |-- scaler.pkl                  StandardScaler
+|   |-- encoder_mappings.pkl        All encoders
+|   |-- users.json                  User credentials
+|   +-- version_YYYYMMDD_HHMMSS/    Versioned cleaning snapshots
 ```
 
 ---
 
-## 4. All Routes (16 total)
+## 4. ALL 16 ROUTES
 
-| Route | Method | Auth | Description |
+| Route | Method | Auth | What It Does |
 |---|---|---|---|
-| `/` | GET | No | Splash screen |
-| `/login` | GET | No | Login page |
-| `/signup` | GET | No | Signup page |
-| `/login_post` | POST | No | Validate credentials |
-| `/signup_post` | POST | No | Create account |
-| `/logout` | GET | No | Clear session |
-| `/dashboard` | GET | Yes | Main dashboard with upload zone |
-| `/preview` | POST | Yes | **NEW** AJAX: returns columns, preview rows, target detection |
-| `/analyze` | POST | Yes | Upload + Stage 1 diagnostics + intelligent analysis |
+| `/` | GET | No | Splash page -> auto-redirects to /login after 3s |
+| `/login` | GET | No | Login form |
+| `/signup` | GET | No | Signup form |
+| `/login_post` | POST | No | Validates credentials, sets session |
+| `/signup_post` | POST | No | Creates user, sets session |
+| `/logout` | GET | No | Clears session |
+| `/dashboard` | GET | Yes | Upload zone + default datasets |
+| `/preview` | POST | Yes | AJAX: returns columns, 5-row preview, target detection |
+| `/analyze` | POST | Yes | Upload file -> Stage 1 diagnostics + intelligent analysis |
 | `/analyze_default` | POST | Yes | Same pipeline for pre-loaded datasets |
-| `/clean` | POST | Yes | Stage 2: adaptive cleaning |
+| `/clean` | POST | Yes | Stage 2: adaptive cleaning pipeline |
 | `/train` | POST | Yes | Stage 3: model training + benchmarking |
-| `/evaluate` | POST | Yes | **NEW** System self-evaluation (returns JSON) |
+| `/evaluate` | POST | Yes | System self-evaluation (returns JSON via fetch) |
 | `/download_cleaned` | GET | Yes | Download cleaned CSV |
-| `/download_report` | GET | Yes | **UPGRADED** Generate + download PDF report |
-| `/static/<path>` | GET | No | Static file serving |
+| `/download_report` | GET | Yes | Generate + download PDF report |
+| `/static/<path>` | GET | No | Serves CSS/JS files |
+
+**Error handlers:**
+- 404 -> redirects to `/`
+- 500 -> shows error message + link home
 
 ---
 
-## 5. The Four-Stage ADIE Pipeline
+## 5. THE PIPELINE (4 Stages)
 
-### Stage 0 --- Target Detection (NEW)
+### Stage 0: Target Detection
+- Happens via AJAX `/preview` when user selects a file
+- Scores every column on: name keywords, cardinality, dtype, missing rate, distribution
+- Returns ranked candidates with confidence scores
+- User can override via dropdown or accept auto-detect
 
-**Trigger**: Immediately after file upload (via AJAX `/preview` endpoint)
-**Module**: `utils/target_detector.py`
-
-The system scores every column across 5 dimensions:
-1. **Name keywords** (+0.40 for exact match like "target", "label", "class"; -0.30 for "id", "name", "date")
-2. **Cardinality** (+0.25 for binary; +0.18 for 3-20 unique; -0.25 for >90% unique)
-3. **Data type** (+0.20 for boolean; +0.12 for low-cardinality integer; +0.10 for categorical)
-4. **Missing values** (-0.20 if >30% missing)
-5. **Value distribution** (+0.08 if reasonably balanced)
-
-Returns:
-```json
-{
-  "recommended": "future_diabetes_5yr",
-  "confidence": 0.85,
-  "reason": "Column name contains target keyword 'future'; Binary column",
-  "candidates": [...]
-}
-```
-
-The user can override via a dropdown or accept the auto-detection.
-
----
-
-### Stage 1 --- Diagnostics + Intelligent Analysis
-
-**Route**: `/analyze` or `/analyze_default`
-**Modules**: `data_analysis.py`, `dataset_expert.py`, `intelligent_engine.py`
-
-Steps:
+### Stage 1: Diagnostics + Intelligent Analysis (`/analyze`)
 1. Load CSV, sanitize column names
-2. Validate target column (from user selection or auto-detect)
-3. Detect column types (`column_detector.py`)
-4. Extract metadata (rows, cols, size, dtypes, target_col)
-5. Run `perform_diagnostics()` --- 9 checks
-6. Run `analyze_dataset_expertly()` --- domain, SWOT, interventions
-7. **NEW**: Run `run_intelligent_analysis()`:
-   - Profile the dataset (size class, missing ratio, skewness, correlation density, cardinality, etc.)
-   - Select strategies for: imputation, outlier handling, encoding, scaling, imbalance, model selection, diagnostics scope
-   - Build explanation panel (7 cards with icons, confidence bars, reasons)
-8. Save all JSON artefacts
-9. Render `result.html` with all data
+2. Auto-sample if >10,000 rows (Render timeout protection)
+3. Detect column types
+4. Run 9 diagnostic checks (missing, duplicates, outliers, imbalance, leakage, noise, mixed fields, correlations, issue identification)
+5. Run expert analysis (domain detection, SWOT, interventions)
+6. Run intelligent engine (profile dataset -> select strategies -> build explanation panel)
+7. Save all JSON artefacts
+8. Render result.html
 
----
+### Stage 2: Cleaning (`/clean`)
+1. Load diagnostics + leakage info
+2. Remove identifiers, leakage columns, duplicates
+3. Drop >90% missing columns
+4. Parse datetime -> year/month/day features
+5. Handle mixed-type columns
+6. Impute (median for numeric, mode for categorical)
+7. Cap outliers (IQR)
+8. Encode (OneHot for low-cardinality, Frequency for high-cardinality, Ordinal, LabelEncoder for target)
+9. Create versioned backup
+10. Re-diagnose cleaned data, calculate improvements
 
-### Stage 2 --- Adaptive Cleaning
-
-**Route**: `/clean`
-**Module**: `data_cleaning.py`
-
-Steps (in order):
-1. Remove identifier columns (never drop target)
-2. Remove leakage columns (>95% correlation with target)
-3. Remove duplicates
-4. Drop columns with >90% missing (never drop target)
-5. Parse datetime columns into year/month/day/dayofweek features
-6. Handle mixed-type columns (coerce to numeric)
-7. Impute missing values (median for numeric, mode for categorical)
-8. Cap outliers (IQR method)
-9. Encode categoricals:
-   - Low cardinality (<=50 unique): OneHotEncoder
-   - High cardinality (>50 unique): Frequency encoding
-   - Ordinal: OrdinalEncoder
-   - Target: LabelEncoder
-10. Create versioned backup with before/after CSVs
-11. Re-run diagnostics on cleaned data
-12. Calculate improvements (issues resolved, rows/columns removed)
-
----
-
-### Stage 3 --- Model Training + Benchmarking
-
-**Route**: `/train`
-**Module**: `model_training.py`
-
-Steps:
-1. Detect task type (classification if target <=20 unique values; else regression)
+### Stage 3: Training (`/train`)
+1. Detect task type (classification vs regression)
 2. Split 80/20 with stratification
-3. Apply SMOTE if classification + imbalanced
+3. Apply SMOTE if imbalanced
 4. Scale with StandardScaler
-5. Train models:
-   - Classification: Random Forest, Decision Tree, Logistic Regression, KNN
-   - Regression: Linear Regression, Random Forest, Decision Tree, KNN
-6. Evaluate: Accuracy/Precision/Recall/F1 (classification) or R2/MAE/MSE (regression)
-7. Extract feature importance from tree-based models
-8. Save best model + scaler
-9. Train on BOTH original (processed) and cleaned datasets for comparison
-10. Store results in `ml_results.json`
+5. Train: Random Forest, Decision Tree, Logistic Regression, KNN (or user-selected)
+6. Evaluate metrics, extract feature importance
+7. Save best model + scaler
+8. Compare original vs cleaned performance
 
 ---
 
-## 6. NEW: Intelligent Decision Engine (`utils/intelligent_engine.py`)
+## 6. KEY MODULES EXPLAINED
 
-### Dataset Profiler
+### `utils/target_detector.py`
+- `detect_target_column(df)` -> scores all columns, returns `{recommended, confidence, reason, candidates}`
+- `get_column_preview(df)` -> first 5 rows as JSON
 
-`profile_dataset(df, target_col)` produces:
-```json
-{
-  "n_rows": 496362,
-  "n_cols": 35,
-  "size_class": "large",
-  "overall_missing_ratio": 0.0012,
-  "dtype_distribution": {"numeric": 28, "categorical": 7, "boolean": 0},
-  "cardinality": {"country": 45, "gender": 2, ...},
-  "high_cardinality_cols": ["country"],
-  "skewness": {"age": 0.12, "BMI": 0.85, ...},
-  "highly_skewed_cols": ["insulin", "HOMA_IR"],
-  "avg_skewness": 0.45,
-  "corr_density": 0.15,
-  "high_corr_pairs": [{"col_a": "...", "col_b": "...", "correlation": 0.92}],
-  "target_info": {"unique_values": 2, "imbalance_ratio": 3.5, "dominant_class_share": 0.78},
-  "n_duplicates": 0,
-  "duplicate_ratio": 0.0
-}
-```
+### `utils/intelligent_engine.py`
+- `profile_dataset(df, target)` -> rich JSON profile (size class, missing ratio, skewness, correlation density, cardinality, etc.)
+- `select_strategies(profile)` -> 7 weighted decisions (imputation, outliers, encoding, scaling, imbalance, models, diagnostics)
+- `build_explanation_panel(profile, strategies)` -> UI cards with icon, confidence %, reason
+- `run_intelligent_analysis(df, target)` -> convenience wrapper returning all three
 
-### Strategy Selector
+### `utils/system_evaluator.py`
+- `evaluate_system(datasets)` -> runs full pipeline on each dataset, returns per-dataset metrics + aggregate stats
 
-`select_strategies(profile)` returns 7 decisions:
+### `utils/report_generator.py`
+- `generate_pdf_report(...)` -> professional A4 PDF using reportlab
+- `generate_text_report(...)` -> legacy .txt format (fallback)
 
-| Strategy | Example Output |
-|---|---|
-| Imputation | `{decision: "Median Imputation", confidence: 0.87, reason: "..."}` |
-| Outlier Handling | `{decision: "IQR Capping", confidence: 0.80, reason: "..."}` |
-| Encoding | `{decision: "Frequency + One-Hot", confidence: 0.90, reason: "..."}` |
-| Scaling | `{decision: "StandardScaler", confidence: 0.88, reason: "..."}` |
-| Imbalance | `{decision: "SMOTE Oversampling", confidence: 0.80, reason: "..."}` |
-| Model Selection | `{decision: "Primary: Random Forest", confidence: 0.90, recommended_models: [...]}` |
-| Diagnostics Scope | `{decision: "Run 7 checks", confidence: 0.95, checks: [...]}` |
+### `utils/data_analysis.py`
+- `perform_diagnostics(df)` -> 9 checks, returns structured dict with identified_issues list
 
-Each decision uses **weighted scoring** (not simple if-else). Multiple options are scored and the highest wins.
+### `utils/data_cleaning.py`
+- `clean_dataset(df, leakage_cols, target_col)` -> full cleaning pipeline, returns cleaned df
 
-### Explanation Panel
+### `utils/model_training.py`
+- `train_and_evaluate(df, target_col, selected_algo)` -> trains models, returns (results_dict, task_type)
+- `detect_task_type(df, target_col)` -> 'classification' or 'regression'
 
-`build_explanation_panel(profile, strategies)` returns a list of UI cards:
-```json
-[
-  {
-    "category": "Imputation Strategy",
-    "icon": "fa-fill-drip",
-    "decision": "Median Imputation",
-    "confidence": 0.87,
-    "confidence_pct": 87,
-    "reason": "Very low missing rate (0.1%); High skewness (1.2) - median preferred"
-  },
-  ...
-]
-```
+### `utils/dataset_expert.py`
+- `analyze_dataset_expertly(df, diagnostics, is_repaired)` -> SWOT, domain, quality score, interventions
+
+### `utils/column_detector.py`
+- `detect_column_types(df, target_col)` -> classifies into identifiers, datetime, numerical, nominal, ordinal
 
 ---
 
-## 7. NEW: System Self-Evaluator (`utils/system_evaluator.py`)
+## 7. FRONTEND PAGES
 
-### Purpose
-Proves ADIE's effectiveness by running the full pipeline on multiple datasets and measuring improvement.
+### `splash.html`
+- Dark background, animated ADIE logo, loading bar
+- JavaScript auto-redirects to `/login` after 3 seconds
 
-### Function: `evaluate_system(datasets)`
-
-For each dataset:
-1. Load CSV
-2. Auto-detect target column
-3. Run diagnostics (before)
-4. Run full cleaning pipeline
-5. Run diagnostics (after)
-6. Train Random Forest on original (minimally processed)
-7. Train Random Forest on cleaned
-8. Collect: accuracy before/after, F1 before/after, issues resolved, processing time
-
-### Output Structure
-```json
-{
-  "results": [
-    {
-      "dataset_name": "diabetes.csv",
-      "success": true,
-      "rows": 496362,
-      "target_col": "future_diabetes_5yr",
-      "task_type": "classification",
-      "issues_before": 5,
-      "issues_after": 0,
-      "issues_resolved": 5,
-      "accuracy_before": 0.82,
-      "accuracy_after": 0.94,
-      "accuracy_improvement": 0.12,
-      "f1_before": 0.79,
-      "f1_after": 0.91,
-      "f1_improvement": 0.12,
-      "processing_time_sec": 45.2
-    },
-    ...
-  ],
-  "aggregate": {
-    "total_datasets": 5,
-    "successful": 4,
-    "failed": 1,
-    "success_rate": 0.80,
-    "improvement_rate": 0.75,
-    "avg_accuracy_improvement": 0.08,
-    "avg_f1_improvement": 0.07,
-    "avg_issues_resolved": 3.5
-  }
-}
-```
-
-### UI
-- Triggered by "RUN SYSTEM EVALUATION" button on result page
-- Shows: summary cards, bar chart (accuracy before/after per dataset), full results table with status badges
-
----
-
-## 8. Diagnostics --- 9 Checks (`data_analysis.py`)
-
-| # | Check | Method | What It Detects |
-|---|---|---|---|
-| 1 | Missing Values | `isnull().sum()` | Count per column + total |
-| 2 | Duplicate Rows | `duplicated().sum()` | Exact duplicate rows |
-| 3 | Basic Statistics | `describe()` | Mean, median, std per numeric column |
-| 4 | Outliers | IQR method (1.5xIQR) | Extreme values per numeric column |
-| 5 | Class Imbalance | `value_counts()` on target | Distribution of target classes |
-| 6 | Feature Correlation / Leakage | Pearson correlation | Features with >95% correlation flagged |
-| 7 | Label Noise | KNN-based semantic analysis | Samples likely mislabelled |
-| 8 | Mixed Field Inconsistencies | Type inspection | Columns with mixed numeric/text |
-| 9 | Issue Identification | Aggregated from above | Severity-scored list of all issues |
-
----
-
-## 9. Column Type Detection (`column_detector.py`)
-
-| Type | Description | Examples |
-|---|---|---|
-| `identifiers` | ID/code columns (removed before training) | `patient_id`, `order_id` |
-| `datetime_cols` | Date/time columns (parsed into features) | `created_at`, `date` |
-| `numerical_cols` | Continuous or discrete numbers | `age`, `price`, `BMI` |
-| `nominal_categorical` | Categories with no natural order | `gender`, `country` |
-| `ordinal_categorical` | Categories with a natural order | `rating`, `education_level` |
-
----
-
-## 10. Expert Analysis (`dataset_expert.py`)
-
-Produces:
-```json
-{
-  "summary": {
-    "rows": 496362, "cols": 39,
-    "domain": "Healthcare / Clinical",
-    "industry": "Medical Research",
-    "quality_score": 100.0,
-    "suitability": "HIGHLY SUITABLE (REPAIRED)",
-    "version": "Repaired"
-  },
-  "swot": { "strengths": [...], "weaknesses": [...] },
-  "interventions": [
-    {"issue": "Class Imbalance", "strategy": "SMOTE Resampling", "rationale": "..."}
-  ],
-  "tasks": ["Binary Classification", "Regression Analysis"],
-  "recommendations": [...]
-}
-```
-
-Domain detection is keyword-based (column names scanned for healthcare/finance/marketing terms).
-
----
-
-## 11. Frontend Pages (4 templates)
-
-### `splash.html` --- Landing Page
-- Animated ADIE logo, auto-redirects to login after 3 seconds
-
-### `auth.html` --- Login/Signup
-- Shared template toggled by `signup` boolean
+### `auth.html`
+- Shared login/signup form (toggled by `signup` boolean)
+- Dark background, white card, emerald accent bar
 - Flash messages for errors
 
-### `index.html` --- Dashboard (UPGRADED)
-- **Drag-and-drop upload zone** with visual feedback (icon changes, border colour)
-- **Live file preview** via AJAX `/preview` endpoint:
-  - Shows file name, size, rows x columns
-  - Populates target column dropdown with all columns + recommended star
-  - Renders first 5 rows in a scrollable table
-- **Target column selector**: dropdown with "Auto-detect (recommended)" default
-- **Default datasets card**: dropdown + submit
-- **Feature cards**: Diagnostics, Intelligent Engine, Repair, ML Benchmark
+### `index.html` (Dashboard)
+- Hero header with username + logout
+- Drag-and-drop upload zone with live preview:
+  - AJAX calls `/preview` on file select
+  - Shows file name, rows x cols
+  - Populates target column dropdown
+  - Renders first 5 rows in scrollable table
+- Default datasets dropdown
+- Feature description cards
 
-### `result.html` --- Analysis Dashboard (UPGRADED - 7 sections)
-
-| Section | When Shown | Content |
-|---|---|---|
-| 1. Expert Report | Always (after Stage 1) | Quality score, domain, industry, suitability badge, issues grid, interventions, SWOT |
-| 2. Decision Transparency Panel | Always (after Stage 1) | **NEW** 7 expandable cards showing every strategy decision with confidence bars and reasoning |
-| 3. Metadata | Always | Rows, columns, size, export button |
-| 4. Pipeline Control | Always | Execute Pipeline button (Stage 1->2) or Algorithm selector + Run Benchmark (Stage 2->3) |
-| 5. Before vs After Analytics | After cleaning | **UPGRADED** Summary cards, 2 charts (issue severity + data quality metrics), side-by-side issue lists, improvement indicators |
-| 6. ML Performance Benchmarks | After training | **UPGRADED** Toggle original/cleaned, animated metric cards, comparison chart, feature importance chart, prediction trend chart, PDF download button |
-| 7. System Evaluation Dashboard | After training | **NEW** Run Evaluation button, aggregate summary cards, bar chart, full results table |
+### `result.html` (Analysis Dashboard - 7 sections)
+1. **Expert Report** - quality score, domain, industry, suitability badge, issues grid, interventions, SWOT
+2. **Decision Transparency Panel** - 7 expandable cards showing every strategy decision with confidence bars
+3. **Metadata** - rows, columns, size, export button
+4. **Pipeline Control** - Execute Pipeline button or Algorithm selector + Run Benchmark
+5. **Before vs After Analytics** - summary cards, 2 charts, side-by-side issues, improvement indicators
+6. **ML Performance Benchmarks** - toggle original/cleaned, metric cards, comparison chart, feature importance, prediction trend, PDF download
+7. **System Evaluation Dashboard** - Run Evaluation button, aggregate cards, bar chart, results table
 
 ---
 
-## 12. Authentication System
+## 8. DEPLOYMENT CONFIGURATION (RENDER)
 
-- **Storage**: `uploads/users.json` (flat JSON: `{"username": "password"}`)
-- **Default user**: `admin` / `password123`
-- **Session**: Flask server-side session (`session['user']`)
-- **Secret key**: `'supersecretkey'` (hardcoded --- not production-safe)
-- **Protection**: `@login_required` decorator on all protected routes
-- **Passwords**: Plaintext (demo/academic project)
+### `Procfile`
+```
+web: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 2
+```
+
+### `render.yaml`
+```yaml
+services:
+  - type: web
+    name: adie-intelligence
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 2
+    envVars:
+      - key: ADIE_SECRET_KEY
+        generateValue: true
+      - key: OPENBLAS_NUM_THREADS
+        value: "1"
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: MKL_NUM_THREADS
+        value: "1"
+```
+
+### `requirements.txt`
+```
+Flask>=2.3.0
+gunicorn>=21.2.0
+pandas>=2.0.0
+numpy>=1.24.0
+scipy>=1.11.0
+scikit-learn>=1.3.0
+imbalanced-learn>=0.11.0
+joblib>=1.3.0
+reportlab>=4.0.0
+regex>=2023.0.0
+```
+
+### Flask App Initialization (app.py lines 30-42)
+```python
+app = Flask(
+    __name__,
+    static_folder='static',
+    static_url_path='/static',
+    template_folder='templates'
+)
+app.secret_key = os.environ.get('ADIE_SECRET_KEY', 'supersecretkey')
+```
+
+### Entry Point (app.py bottom)
+```python
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+```
+
+### Critical Deployment Notes
+- `static_folder='static'` and `template_folder='templates'` MUST be explicit for Render
+- `$PORT` is set by Render dynamically - never hardcode it in Procfile
+- `DEMO_MAX_ROWS = 10000` auto-samples large datasets to prevent timeouts
+- Thread limits (`OPENBLAS_NUM_THREADS=1`) prevent memory bloat on free tier
+- `uploads/` folder is ephemeral on Render (resets on redeploy) - this is fine for demo
+- 404 errors redirect to `/` (prevents blank pages)
 
 ---
 
-## 13. Versioning System
+## 9. CSS DESIGN SYSTEM
 
-Every `/clean` call creates:
-```
-uploads/version_20260425_000650/
-+-- before_clean.csv
-+-- after_clean.csv
-+-- version_info.json
+**Color palette:**
+- Primary: #065f46 (Deep Forest Green)
+- Accent: #10b981 (Emerald)
+- Secondary: #334155 (Charcoal)
+- Danger: #991b1b (Crimson)
+- Warning: #92400e (Burnt Amber)
+- Background: #f8fafc (Light Grey-Blue)
+
+**Fonts:** Plus Jakarta Sans (body), Space Grotesk (headings)
+
+**Key CSS classes:**
+- `.hero` - gradient banner
+- `.card` - white card with fadeInUp animation
+- `.btn-primary` / `.btn-secondary` - buttons
+- `.upload-zone` - drag-drop area
+- `.decision-card` - expandable details element
+- `.alert` - info/success/warning messages
+- `.stat-label` / `.stat-value` - metric displays
+- `#loadingOverlay` - full-screen spinner
+- `.badge-improved` / `.badge-declined` - green/red indicators
+
+**All templates link CSS via:**
+```html
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 ```
 
-`version_info.json`:
+---
+
+## 10. AUTHENTICATION
+
+- Users stored in `uploads/users.json` as `{"username": "password"}`
+- Default: `admin` / `password123`
+- Session-based: `session['user'] = username`
+- `@login_required` decorator on protected routes
+- Plaintext passwords (demo only, not production-safe)
+
+---
+
+## 11. DATA FLOW
+
+```
+User drags file into upload zone
+    |
+    v
+/preview (AJAX) -> target_detector.py -> returns columns + preview + target
+    |
+    v
+User confirms target, clicks "Analyse Dataset"
+    |
+    v
+/analyze -> column_detector -> data_analysis -> dataset_expert -> intelligent_engine
+    |
+    v
+result.html (Stage 1: Diagnostics + Decision Transparency)
+    |
+    v
+User clicks "Execute Pipeline"
+    |
+    v
+/clean -> data_cleaning -> version snapshot -> re-diagnose -> compare
+    |
+    v
+result.html (Stage 2: Before/After Analytics)
+    |
+    v
+User clicks "Run Benchmark"
+    |
+    v
+/train -> model_training -> best_model.pkl
+    |
+    v
+result.html (Stage 3: Performance charts + feature importance)
+    |
+    v
+User clicks "Run System Evaluation"
+    |
+    v
+/evaluate -> system_evaluator -> runs pipeline on all datasets
+    |
+    v
+result.html (Evaluation Dashboard: summary + chart + table)
+    |
+    v
+User clicks "Download PDF Report"
+    |
+    v
+/download_report -> report_generator -> ADIE_Analysis_Report.pdf
+```
+
+---
+
+## 12. JSON ARTEFACT STRUCTURES
+
+### metadata.json
 ```json
 {
-  "timestamp": "20260425_000650",
-  "original_rows": 1000, "cleaned_rows": 950,
-  "original_columns": 20, "cleaned_columns": 17,
-  "original_issues": 5, "cleaned_issues": 1,
-  "improvements": {
-    "issues_resolved": 4,
-    "resolved_list": ["Missing Values", "Duplicates", "Outliers", "Data Leakage"],
-    "rows_removed": 50, "columns_removed": 3
+  "filename": "dataset.csv",
+  "size_kb": 1234.5,
+  "rows": 10000,
+  "columns": 15,
+  "column_names": ["col1", "col2", ...],
+  "types": {"col1": "int64", "col2": "object", ...},
+  "target_col": "label",
+  "column_types": {
+    "identifiers": [],
+    "datetime_cols": [],
+    "numerical_cols": ["age", "income"],
+    "nominal_categorical": ["gender"],
+    "ordinal_categorical": ["rating"]
   }
+}
+```
+
+### intelligent_analysis.json
+```json
+{
+  "profile": {
+    "n_rows": 10000, "n_cols": 15, "size_class": "medium",
+    "overall_missing_ratio": 0.05, "avg_skewness": 0.8,
+    "corr_density": 0.12, "target_info": {"unique_values": 2, "imbalance_ratio": 3.5}
+  },
+  "strategies": {
+    "imputation": {"decision": "Median Imputation", "confidence": 0.87, "reason": "..."},
+    "outlier_handling": {"decision": "IQR Capping", "confidence": 0.80, "reason": "..."},
+    "encoding": {"decision": "Frequency + One-Hot", "confidence": 0.90, "reason": "..."},
+    "scaling": {"decision": "StandardScaler", "confidence": 0.88, "reason": "..."},
+    "imbalance": {"decision": "SMOTE Oversampling", "confidence": 0.80, "reason": "..."},
+    "model_selection": {"decision": "Primary: Random Forest", "confidence": 0.90, "recommended_models": ["Random Forest", "Decision Tree", "Logistic Regression"]},
+    "diagnostics_focus": {"decision": "Run 7 checks", "confidence": 0.95, "checks": [...]}
+  },
+  "explanation_panel": [
+    {"category": "Imputation Strategy", "icon": "fa-fill-drip", "decision": "Median Imputation", "confidence": 0.87, "confidence_pct": 87, "reason": "..."}
+  ]
+}
+```
+
+### ml_results.json
+```json
+{
+  "orig_results": {"Random Forest": {"Accuracy": 0.82, "F1-Score": 0.79, ...}},
+  "cleaned_results": {"Random Forest": {"Accuracy": 0.94, "F1-Score": 0.91, ...}},
+  "task_type": "classification",
+  "selected_algo": "All Algorithms",
+  "target_col": "label"
+}
+```
+
+### eval_results.json
+```json
+{
+  "results": [{"dataset_name": "...", "success": true, "accuracy_improvement": 0.12, ...}],
+  "aggregate": {"total_datasets": 5, "success_rate": 0.80, "avg_accuracy_improvement": 0.08}
 }
 ```
 
 ---
 
-## 14. Model Persistence Files
+## 13. KNOWN LIMITATIONS
 
-| File | Contents | Used For |
+1. Passwords in plaintext (demo only)
+2. Session is in-memory (lost on Render restart)
+3. uploads/ is ephemeral on Render (resets on redeploy)
+4. Free tier has 512MB RAM limit - large datasets may OOM
+5. First request after inactivity takes ~30s (cold start)
+6. No CSRF protection
+7. Single-user state (all users share uploads/)
+8. System evaluation limited to 5 datasets per run
+9. No /predict endpoint (model trained but not exposed for inference)
+
+---
+
+## 14. COMMON ISSUES & FIXES
+
+| Issue | Cause | Fix |
 |---|---|---|
-| `best_model.pkl` | Trained sklearn estimator | Future predictions |
-| `scaler.pkl` | Fitted StandardScaler | Normalising new data |
-| `encoder_mappings.pkl` | OneHot/Ordinal/Label encoders | Encoding new data |
-| `encoder_mappings_info.pkl` | JSON-serializable encoder metadata | Inspection |
+| 404 on all pages | app.py not at repo root | Ensure app.py is at root, not in subfolder |
+| CSS not loading (black/white) | Flask can't find static/ | Explicit `static_folder='static'` in Flask() |
+| Timeout on training | Dataset too large | DEMO_MAX_ROWS=10000 auto-samples |
+| Session lost | Render restarted | Just log in again |
+| PDF download fails | reportlab not installed | Falls back to .txt automatically |
+| 502 Bad Gateway | App still starting | Wait 30s, refresh |
+| Upload fails | File >50MB | Reduce file size or increase MAX_CONTENT_LENGTH |
 
 ---
 
-## 15. PDF Report Generation (`utils/report_generator.py`)
+## 15. HOW TO MAKE CHANGES
 
-### `generate_pdf_report()` (NEW)
-Uses **reportlab** to produce a professional A4 PDF with:
-- Cover block (dark green gradient header)
-- Executive Summary table (version, suitability, quality score, domain, size)
-- SWOT analysis (green/red split table)
-- Issue Identification table (type, severity badge, score)
-- Intervention Selection table (issue, strategy, rationale)
-- Detailed Diagnostics (missing, duplicates, outliers, correlations)
-- ML Performance Comparison (Original vs Repaired with delta columns showing improvement arrows)
-- System Evaluation section (if available)
-- Final Determination footer
+1. Edit files locally
+2. Test: `python app.py` (runs on localhost:10000)
+3. Commit + push to GitHub
+4. Render auto-redeploys in ~3 minutes
 
-Falls back to `.txt` if reportlab is not installed.
-
-### `generate_text_report()` (Legacy)
-Still available for backward compatibility.
-
----
-
-## 16. Design Patterns
-
-| Pattern | Where | Purpose |
-|---|---|---|
-| Pipeline Pattern | 4-stage flow (Detect -> Diagnose -> Repair -> Train) | Sequential, modular processing |
-| Strategy Pattern | `intelligent_engine.py` weighted scoring | Data-driven decision selection |
-| Decorator Pattern | `@login_required` | Route-level authentication |
-| Factory Pattern | `get_models()` | Returns algorithm dict by task type |
-| Observer Pattern | AJAX `/preview` endpoint | Real-time UI updates without page reload |
-| Expert System | `dataset_expert.py` + `intelligent_engine.py` | Domain detection + rule-based recommendations |
-| Self-Evaluation | `system_evaluator.py` | System proves its own effectiveness |
-
----
-
-## 17. Key Architectural Decisions
-
-1. **Target column is never assumed** --- detected via scoring or user-selected via dropdown
-2. **Every decision is explainable** --- confidence score + human-readable reason
-3. **Weighted scoring over if-else** --- multiple options scored, highest wins
-4. **AJAX preview before submission** --- user sees data before committing to analysis
-5. **System evaluates itself** --- runs pipeline on multiple datasets, reports aggregate improvement
-6. **PDF over TXT** --- professional output suitable for academic submission
-7. **Graceful fallbacks** --- PDF falls back to TXT; target detection falls back to last column
-8. **All artefacts are JSON** --- human-readable, easy to parse, enables report generation
-9. **Versioned snapshots** --- full audit trail with before/after CSVs
-10. **Modular utils/** --- each concern in its own file, testable independently
-
----
-
-## 18. Data Flow Summary
-
-```
-User selects file (drag-drop or click)
-        |
-        v
-/preview (AJAX) --> target_detector.py --> returns columns + preview + target recommendation
-        |
-        v
-User confirms target column (or accepts auto-detect)
-        |
-        v
-/analyze --> column_detector.py --> data_analysis.py --> dataset_expert.py --> intelligent_engine.py
-        |
-        v
-result.html (Stage 1: Diagnostics + Decision Transparency Panel)
-        |
-        v
-User clicks "Execute Pipeline"
-        |
-        v
-/clean --> data_cleaning.py --> version snapshot --> re-diagnose --> compare before/after
-        |
-        v
-result.html (Stage 2: Before/After Analytics with charts + improvement indicators)
-        |
-        v
-User selects algorithm, clicks "Run Benchmark"
-        |
-        v
-/train --> model_training.py --> best_model.pkl + scaler.pkl
-        |
-        v
-result.html (Stage 3: Performance charts + toggle original/cleaned + feature importance)
-        |
-        v
-User clicks "Run System Evaluation"
-        |
-        v
-/evaluate --> system_evaluator.py --> runs pipeline on all available datasets
-        |
-        v
-result.html (System Evaluation Dashboard: summary cards + chart + table)
-        |
-        v
-User clicks "Download PDF Report"
-        |
-        v
-/download_report --> report_generator.py --> ADIE_Analysis_Report.pdf
-```
-
----
-
-## 19. Quick Reference --- All Key Functions
-
-| Function | File | Purpose |
-|---|---|---|
-| `detect_target_column(df)` | `target_detector.py` | Score all columns, return best target candidate |
-| `get_column_preview(df)` | `target_detector.py` | Return first 5 rows as JSON |
-| `profile_dataset(df, target)` | `intelligent_engine.py` | Produce rich dataset profile |
-| `select_strategies(profile)` | `intelligent_engine.py` | 7 weighted strategy decisions |
-| `build_explanation_panel(...)` | `intelligent_engine.py` | UI cards with confidence + reasons |
-| `run_intelligent_analysis(df, target)` | `intelligent_engine.py` | Convenience: profile + strategies + panel |
-| `evaluate_system(datasets)` | `system_evaluator.py` | Run pipeline on multiple datasets, aggregate results |
-| `perform_diagnostics(df)` | `data_analysis.py` | Run all 9 diagnostic checks |
-| `analyze_dataset_expertly(df, diag)` | `dataset_expert.py` | SWOT, domain, quality score, interventions |
-| `detect_column_types(df, target)` | `column_detector.py` | Classify columns by type |
-| `clean_dataset(df, leakage, target)` | `data_cleaning.py` | Full adaptive cleaning pipeline |
-| `detect_task_type(df, target)` | `model_training.py` | Return 'classification' or 'regression' |
-| `get_models(task_type)` | `model_training.py` | Return dict of sklearn model instances |
-| `train_and_evaluate(df, target, algo)` | `model_training.py` | Train, evaluate, save best model |
-| `generate_pdf_report(...)` | `report_generator.py` | Professional PDF with all sections |
-| `generate_text_report(...)` | `report_generator.py` | Legacy text report |
-| `login_required(f)` | `app.py` | Decorator: redirect if not authenticated |
-| `_run_stage1(csv_path, filename, target)` | `app.py` | Shared helper: load + diagnose + analyse |
-| `_save_json(filename, data)` | `app.py` | Persist JSON to uploads/ |
-| `_load_json(filename)` | `app.py` | Load JSON from uploads/ |
-
----
-
-## 20. CSS Design System (`static/style.css`)
-
-**Colour Palette:**
-```css
---primary: #065f46;       /* Deep Forest Green */
---accent: #10b981;        /* Emerald Green */
---secondary: #334155;     /* Charcoal Grey */
---danger: #991b1b;        /* Deep Crimson */
---warning: #92400e;       /* Burnt Amber */
---bg-main: #f8fafc;       /* Light Greyish Blue */
---text-main: #1e293b;     /* Charcoal Navy */
-```
-
-**Typography:**
-- Body: `Plus Jakarta Sans`
-- Headings: `Space Grotesk`
-
-**Key Components:**
-- `.hero` --- gradient banner with left accent border
-- `.card` --- white card with fadeInUp animation
-- `.btn` --- uppercase button (primary/secondary)
-- `.upload-zone` --- dashed drag-drop area with hover/drag-over states
-- `.decision-card` --- expandable `<details>` element for transparency panel
-- `.alert` --- info/success/warning with left border accent
-- `.stat-label` / `.stat-value` --- large metric displays
-- `#loadingOverlay` --- full-screen spinner with animated progress bar
-- `.badge-improved` / `.badge-declined` --- green/red improvement indicators
-- `#previewTable` --- scrollable data preview table
-- `#evalTable` --- system evaluation results table
-
----
-
-## 21. How to Run
-
-```bash
-# 1. Install dependencies
-pip install -r requirements.txt
-
-# 2. Run the Flask app
-python app.py
-
-# 3. Open in browser
-# http://127.0.0.1:5000
-
-# Default login: admin / password123
-```
-
-The app runs in debug mode with thread limits for memory efficiency:
+**To add a new route:**
 ```python
-os.environ['OPENBLAS_NUM_THREADS'] = '1'
-os.environ['OMP_NUM_THREADS'] = '1'
-os.environ['MKL_NUM_THREADS'] = '1'
+@app.route('/new-page')
+@login_required
+def new_page():
+    return render_template('new_page.html')
 ```
 
----
-
-## 22. Dependencies (`requirements.txt`)
-
-```
-Flask>=2.3.0              # Web framework
-pandas>=2.0.0             # Data manipulation
-numpy>=1.24.0             # Numerical computing
-scipy>=1.11.0             # Statistical functions (skewness, etc.)
-scikit-learn>=1.3.0       # ML algorithms
-imbalanced-learn>=0.11.0  # SMOTE for class imbalance
-joblib>=1.3.0             # Model serialization
-reportlab>=4.0.0          # PDF report generation
-matplotlib>=3.7.0         # Visualization (optional)
-seaborn>=0.12.0           # Statistical visualization (optional)
-regex>=2023.0.0           # Advanced regex patterns
-```
+**To add a new utility module:**
+1. Create `utils/new_module.py`
+2. Import in app.py: `from utils.new_module import my_function`
+3. Use in routes
 
 ---
 
-## 23. Known Limitations / Security Notes
-
-1. Passwords stored in plaintext in `users.json`
-2. Secret key is hardcoded (`'supersecretkey'`)
-3. No file size limit on uploads
-4. Single-user state (all users share `uploads/` folder)
-5. No CSRF protection on forms
-6. No input sanitisation on username/password
-7. Thread safety issues with concurrent users
-8. No `/predict` route (model trained but not exposed for inference)
-9. System evaluation limited to 5 datasets per run (for performance)
-
----
-
-## 24. What Makes This Academically Strong
-
-| Feature | Academic Value |
-|---|---|
-| Intelligent Decision Engine | Demonstrates data-driven reasoning, not just hard-coded rules |
-| Confidence Scores | Quantifies uncertainty in every decision |
-| Explainability Panel | Shows the system can justify its actions (XAI principle) |
-| System Self-Evaluation | Proves effectiveness with empirical evidence across datasets |
-| Target Auto-Detection | Shows the system adapts to unknown datasets |
-| Before/After Comparison | Demonstrates measurable improvement |
-| PDF Report | Professional output suitable for submission |
-| Modular Architecture | Clean separation of concerns, testable components |
-| Versioning | Full audit trail and reproducibility |
-| Multiple ML Algorithms | Comparative analysis, not single-model bias |
-
----
-
-*This document was auto-generated from full codebase analysis of the ADIE v2.0 application (April 2026).*
+*End of document. This file contains everything needed to understand, modify, debug, or extend ADIE v2.0.*

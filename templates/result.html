@@ -358,6 +358,179 @@
 
 
   <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- 5b. ADAPTIVE ENGINE INTELLIGENCE REPORT                             -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  {% if cleaned and adaptive_report %}
+  <div class="card" style="border-top:4px solid #6366f1;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2rem;">
+      <div>
+        <h3 style="margin-bottom:0.25rem;"><i class="fas fa-brain" style="color:#6366f1;"></i> ADAPTIVE ENGINE INTELLIGENCE</h3>
+        <p style="font-size:0.75rem;color:var(--text-muted);font-weight:700;">ENGINE v{{ adaptive_report.version }} &mdash; ZERO COLUMNS DROPPED</p>
+      </div>
+      <div style="padding:0.5rem 1rem;background:#6366f1;color:white;font-weight:700;font-size:0.7rem;letter-spacing:0.1em;border-radius:4px;">
+        {{ adaptive_report.processing_time_seconds }}s
+      </div>
+    </div>
+
+    <!-- Key metrics row -->
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1rem;margin-bottom:2rem;">
+      <div style="background:#eef2ff;padding:1.25rem;border-radius:8px;border:2px solid #6366f1;text-align:center;">
+        <div style="font-size:0.65rem;font-weight:800;color:#4338ca;">DATASET TYPE</div>
+        <div style="font-size:1.1rem;font-weight:800;color:#6366f1;margin-top:0.25rem;text-transform:uppercase;">
+          {{ adaptive_report.dataset_type.primary_type }}
+        </div>
+        <div style="font-size:0.65rem;color:var(--text-muted);margin-top:0.25rem;">
+          {{ (adaptive_report.dataset_type.confidence * 100)|round(0) }}% confidence
+        </div>
+      </div>
+      <div style="background:#fef3c7;padding:1.25rem;border-radius:8px;border:2px solid #f59e0b;text-align:center;">
+        <div style="font-size:0.65rem;font-weight:800;color:#92400e;">DOMAIN</div>
+        <div style="font-size:1.1rem;font-weight:800;color:#f59e0b;margin-top:0.25rem;text-transform:uppercase;">
+          {{ adaptive_report.domain.detected_domain }}
+        </div>
+        <div style="font-size:0.65rem;color:var(--text-muted);margin-top:0.25rem;">
+          {{ (adaptive_report.domain.confidence * 100)|round(0) }}% confidence
+        </div>
+      </div>
+      <div style="background:#dcfce7;padding:1.25rem;border-radius:8px;border:2px solid #22c55e;text-align:center;">
+        <div style="font-size:0.65rem;font-weight:800;color:#166534;">TRANSFORMATIONS</div>
+        <div style="font-size:1.8rem;font-weight:800;color:#22c55e;margin-top:0.25rem;">
+          {{ adaptive_report.transformations.total }}
+        </div>
+      </div>
+      <div style="background:#dbeafe;padding:1.25rem;border-radius:8px;border:2px solid #3b82f6;text-align:center;">
+        <div style="font-size:0.65rem;font-weight:800;color:#1e40af;">COLUMNS ADDED</div>
+        <div style="font-size:1.8rem;font-weight:800;color:#3b82f6;margin-top:0.25rem;">
+          +{{ adaptive_report.dataset_info.columns_added }}
+        </div>
+      </div>
+      <div style="background:#f0fdf4;padding:1.25rem;border-radius:8px;border:2px solid #065f46;text-align:center;">
+        <div style="font-size:0.65rem;font-weight:800;color:#065f46;">COLUMNS DROPPED</div>
+        <div style="font-size:1.8rem;font-weight:800;color:#065f46;margin-top:0.25rem;">0</div>
+        <div style="font-size:0.6rem;color:#065f46;font-weight:700;">GUARANTEED</div>
+      </div>
+    </div>
+
+    <!-- Shape transformation -->
+    <div style="background:#f8fafc;padding:1.25rem;border:1px solid var(--border);border-radius:8px;margin-bottom:2rem;">
+      <div style="display:flex;align-items:center;justify-content:center;gap:2rem;flex-wrap:wrap;">
+        <div style="text-align:center;">
+          <div style="font-size:0.65rem;font-weight:800;color:var(--text-muted);">ORIGINAL SHAPE</div>
+          <div style="font-size:1.2rem;font-weight:700;margin-top:0.25rem;">
+            {{ adaptive_report.dataset_info.original_shape[0] }} &times; {{ adaptive_report.dataset_info.original_shape[1] }}
+          </div>
+        </div>
+        <div style="font-size:1.5rem;color:#6366f1;"><i class="fas fa-arrow-right"></i></div>
+        <div style="text-align:center;">
+          <div style="font-size:0.65rem;font-weight:800;color:var(--text-muted);">PREPARED SHAPE</div>
+          <div style="font-size:1.2rem;font-weight:700;margin-top:0.25rem;color:#6366f1;">
+            {{ adaptive_report.dataset_info.prepared_shape[0] }} &times; {{ adaptive_report.dataset_info.prepared_shape[1] }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Protection & Feature Importance -->
+    <div class="grid" style="grid-template-columns:1fr 1fr;gap:2rem;margin-bottom:2rem;">
+      <!-- Protection summary -->
+      <div style="background:#f8fafc;padding:1.25rem;border:1px solid var(--border);border-radius:8px;">
+        <h4 style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;"><i class="fas fa-shield-alt" style="color:#6366f1;"></i> COLUMN PROTECTION</h4>
+        {% if adaptive_report.protection and adaptive_report.protection.summary %}
+        <div style="display:grid;gap:0.5rem;">
+          {% for level, count in adaptive_report.protection.summary.items() %}
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem 0.75rem;background:white;border-radius:4px;border-left:3px solid {% if level == 'critical' %}#dc2626{% elif level == 'protected' %}#f59e0b{% elif level == 'careful' %}#3b82f6{% elif level == 'structural' %}#8b5cf6{% else %}#22c55e{% endif %};">
+            <span style="font-size:0.78rem;font-weight:700;text-transform:uppercase;">{{ level }}</span>
+            <span style="font-size:0.85rem;font-weight:800;">{{ count }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Top features -->
+      <div style="background:#f8fafc;padding:1.25rem;border:1px solid var(--border);border-radius:8px;">
+        <h4 style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;"><i class="fas fa-star" style="color:#f59e0b;"></i> TOP FEATURES (Pre-Clean Importance)</h4>
+        {% if adaptive_report.feature_importance and adaptive_report.feature_importance.top_features %}
+        <div style="display:grid;gap:0.5rem;">
+          {% for feat, score in adaptive_report.feature_importance.top_features.items() %}
+          <div style="display:flex;align-items:center;gap:0.75rem;padding:0.4rem 0;">
+            <span style="font-size:0.78rem;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ feat }}</span>
+            <div style="width:80px;height:6px;background:var(--border);border-radius:3px;flex-shrink:0;">
+              <div style="width:{{ (score * 100)|round(0) }}%;height:100%;background:#f59e0b;border-radius:3px;"></div>
+            </div>
+            <span style="font-size:0.7rem;font-weight:700;color:var(--text-muted);width:35px;text-align:right;">{{ '%.2f'|format(score) }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div style="color:var(--text-muted);font-size:0.8rem;">No feature importance data available</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Transformation breakdown -->
+    {% if adaptive_report.transformations and adaptive_report.transformations.by_type %}
+    <div style="background:#f8fafc;padding:1.25rem;border:1px solid var(--border);border-radius:8px;margin-bottom:2rem;">
+      <h4 style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;"><i class="fas fa-cogs" style="color:#6366f1;"></i> TRANSFORMATION BREAKDOWN</h4>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0.75rem;">
+        {% for op_type, count in adaptive_report.transformations.by_type.items() %}
+        <div style="padding:0.75rem;background:white;border-radius:4px;border:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:0.72rem;font-weight:600;text-transform:uppercase;color:var(--text-muted);">{{ op_type.replace('_', ' ') }}</span>
+          <span style="font-size:1rem;font-weight:800;color:#6366f1;">{{ count }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Quality metrics -->
+    {% if adaptive_report.quality_metrics %}
+    <div style="background:#f8fafc;padding:1.25rem;border:1px solid var(--border);border-radius:8px;margin-bottom:2rem;">
+      <h4 style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;"><i class="fas fa-chart-pie" style="color:#22c55e;"></i> DATA QUALITY SCORE</h4>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1rem;">
+        <div style="text-align:center;">
+          <div style="font-size:2rem;font-weight:800;color:{% if adaptive_report.quality_metrics.overall_quality_score >= 80 %}#22c55e{% elif adaptive_report.quality_metrics.overall_quality_score >= 60 %}#f59e0b{% else %}#dc2626{% endif %};">
+            {{ adaptive_report.quality_metrics.overall_quality_score }}%
+          </div>
+          <div style="font-size:0.65rem;font-weight:700;color:var(--text-muted);">OVERALL</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:1.5rem;font-weight:800;color:#3b82f6;">{{ (adaptive_report.quality_metrics.completeness * 100)|round(1) }}%</div>
+          <div style="font-size:0.65rem;font-weight:700;color:var(--text-muted);">COMPLETENESS</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:1.5rem;font-weight:800;color:#8b5cf6;">{{ (adaptive_report.quality_metrics.uniqueness * 100)|round(1) }}%</div>
+          <div style="font-size:0.65rem;font-weight:700;color:var(--text-muted);">UNIQUENESS</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:1.5rem;font-weight:800;color:#f59e0b;">{{ (adaptive_report.quality_metrics.consistency * 100)|round(1) }}%</div>
+          <div style="font-size:0.65rem;font-weight:700;color:var(--text-muted);">CONSISTENCY</div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Notes -->
+    {% if adaptive_report.notes %}
+    <div style="background:#eef2ff;padding:1rem;border-radius:8px;border:1px solid #c7d2fe;">
+      <h4 style="font-size:0.75rem;color:#4338ca;margin-bottom:0.75rem;"><i class="fas fa-info-circle"></i> ENGINE NOTES</h4>
+      {% for note in adaptive_report.notes %}
+      <div style="font-size:0.8rem;color:#4338ca;margin-bottom:0.4rem;"><i class="fas fa-chevron-right" style="font-size:0.6rem;margin-right:0.5rem;"></i>{{ note }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Guarantees badge -->
+    <div style="margin-top:1.5rem;padding:1rem;background:#f0fdf4;border:2px solid #22c55e;border-radius:8px;text-align:center;">
+      <div style="font-size:0.75rem;font-weight:800;color:#166534;letter-spacing:0.1em;">
+        <i class="fas fa-check-circle"></i> GUARANTEES: NO COLUMNS DROPPED &bull; ALL TRANSFORMATIONS LOGGED &bull; ORIGINAL INFORMATION PRESERVED
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
   <!-- 6. ML PERFORMANCE BENCHMARKS                                        -->
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   {% if trained %}

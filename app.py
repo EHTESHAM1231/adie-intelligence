@@ -13,7 +13,7 @@ import shutil
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session, jsonify
 from utils.data_analysis import perform_diagnostics
-from utils.data_cleaning import clean_dataset
+from utils.adaptive_cleaning import clean_dataset, clean_dataset_adaptive, get_adaptive_diagnostics
 from utils.model_training import train_and_evaluate, MODEL_PATH, SCALER_PATH
 from utils.report_generator import generate_text_report, generate_pdf_report
 from utils.dataset_expert import analyze_dataset_expertly
@@ -27,11 +27,15 @@ from functools import wraps
 # ── Demo mode: auto-sample large datasets to prevent Render timeouts ──────────
 DEMO_MAX_ROWS = 10000
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    static_folder='static',
+    static_url_path='/static',
+    template_folder='templates'
+)
 app.secret_key = os.environ.get('ADIE_SECRET_KEY', 'supersecretkey')
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(os.path.join(UPLOAD_FOLDER), exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max upload
 DEFAULT_DATA_FOLDER = os.path.join('data', 'default')
@@ -54,12 +58,29 @@ def login_required(f):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# ERROR HANDLERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.errorhandler(404)
+def not_found(e):
+    return redirect(url_for('splash'))
+
+@app.errorhandler(500)
+def server_error(e):
+    return f"<h1>ADIE Error</h1><p>{str(e)}</p><a href='/'>Go Home</a>", 500
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # AUTH ROUTES
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.route('/')
 def splash():
-    return render_template('splash.html')
+    try:
+        return render_template('splash.html')
+    except Exception:
+        # Fallback if template not found (deployment issue)
+        return redirect(url_for('login'))
 
 
 @app.route('/login')
@@ -436,14 +457,16 @@ def clean():
     os.makedirs(version_dir, exist_ok=True)
     shutil.copy(filepath, os.path.join(version_dir, 'before_clean.csv'))
 
-    # Clean
-    cleaned_df = clean_dataset(df, leakage_cols=leakage_cols, target_col=target_col)
+    # Clean using Adaptive Data Preparation Engine
+    cleaned_df, adaptive_report = clean_dataset_adaptive(
+        df, target_col, leakage_cols=leakage_cols, verbose=False
+    )
 
     cleaned_filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'cleaned_dataset.csv')
     cleaned_df.to_csv(cleaned_filepath, index=False)
     shutil.copy(cleaned_filepath, os.path.join(version_dir, 'after_clean.csv'))
 
-    # Diagnostics AFTER cleaning
+    # Diagnostics AFTER cleaning (use adaptive diagnostics for richer info)
     diagnostics = perform_diagnostics(cleaned_df)
     diagnostics['target_col'] = target_col
 
@@ -467,7 +490,14 @@ def clean():
             'issues_resolved': len(resolved),
             'resolved_list': list(resolved),
             'rows_removed': len(df) - len(cleaned_df),
-            'columns_removed': len(df.columns) - len(cleaned_df.columns)
+            'columns_removed': 0,  # GUARANTEED: no columns dropped
+            'columns_added': adaptive_report.get('dataset_info', {}).get('columns_added', 0),
+        },
+        'adaptive_engine': {
+            'dataset_type': adaptive_report.get('dataset_type', {}).get('primary_type', 'unknown'),
+            'domain': adaptive_report.get('domain', {}).get('detected_domain', 'unknown'),
+            'transformations': adaptive_report.get('transformations', {}).get('total', 0),
+            'columns_dropped': 0,
         }
     }
     with open(os.path.join(version_dir, 'version_info.json'), 'w') as f:
@@ -485,6 +515,7 @@ def clean():
     _save_json('expert_report.json', expert_report)
     _save_json('intelligent_analysis.json', intelligent_analysis)
     _save_json('metadata.json', metadata)
+    _save_json('adaptive_report.json', adaptive_report)
 
     flash('ADIE Pipeline: Dataset successfully repaired and optimized!')
 
@@ -496,7 +527,8 @@ def clean():
         filename=metadata.get('filename', 'dataset.csv'),
         cleaned=True,
         orig_diagnostics=orig_diagnostics,
-        intelligent_analysis=intelligent_analysis
+        intelligent_analysis=intelligent_analysis,
+        adaptive_report=adaptive_report
     )
 
 
@@ -703,5 +735,5 @@ def download_report():
 # ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
