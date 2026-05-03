@@ -304,20 +304,36 @@ class AdaptiveDataPreparationEngine:
         notes = []
         
         # Dataset type notes
-        if self.dataset_type_info["primary_type"] == "time_series":
-            notes.append("Time-series dataset detected - chronological order preserved")
+        ds_type = self.dataset_type_info["primary_type"]
+        if ds_type == "time_series":
+            notes.append("Time-series dataset detected — chronological order preserved, lag features added")
+        elif ds_type == "relational":
+            notes.append("Relational dataset detected — entity identifiers preserved, frequency features added")
+        elif ds_type == "high_cardinality":
+            notes.append("High-cardinality dataset — frequency/hash encoding applied, one-hot avoided")
         
-        if self.dataset_type_info["primary_type"] == "high_cardinality":
-            notes.append("High-cardinality dataset - frequency/hash encoding applied")
+        # Size-class notes
+        size_class = self.profile.get("size_class", "medium")
+        if size_class == "small":
+            notes.append("Small dataset — aggressive transformations limited to preserve information")
         
         # Domain notes
         if self.domain_info["confidence"] > 0.7:
-            notes.append(f"Strong domain signal ({self.domain_info['domain']}) - domain-specific features added")
+            notes.append(f"Strong domain signal ({self.domain_info['domain']}) — domain-specific features added")
+        elif self.domain_info["confidence"] > 0.2:
+            notes.append(f"Domain detected: {self.domain_info['domain']} (moderate confidence)")
+        
+        # Strategy hints
+        strategy_hints = self.config.get("strategy_hints", {})
+        if strategy_hints:
+            imp = strategy_hints.get("imputation", {})
+            if imp.get("decision"):
+                notes.append(f"Intelligent engine recommended: {imp['decision']}")
         
         # Missing value notes
         missing_analysis = self.profile.get("missing_analysis", {})
         if missing_analysis.get("cols_very_high_missing"):
-            notes.append(f"Columns with >80% missing: {len(missing_analysis['cols_very_high_missing'])} - confidence flags added")
+            notes.append(f"Columns with >80% missing: {len(missing_analysis['cols_very_high_missing'])} — confidence flags added")
         
         # Protection notes
         n_protected = len(self.protection_system.get_columns_by_level(ProtectionLevel.PROTECTED))

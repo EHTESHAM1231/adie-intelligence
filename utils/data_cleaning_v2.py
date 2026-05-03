@@ -42,10 +42,6 @@ except ImportError as e:
     ADAPTIVE_ENGINE_AVAILABLE = False
     print(f"Warning: Adaptive engine not available: {e}")
 
-# Import legacy cleaning as fallback
-from utils.data_cleaning import clean_dataset as legacy_clean_dataset
-
-
 def clean_dataset_v2(
     df: pd.DataFrame,
     target_col: str,
@@ -54,9 +50,7 @@ def clean_dataset_v2(
     verbose: bool = False
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
-    Clean dataset using the new Adaptive Data Preparation Engine.
-    
-    This is the recommended interface for new code.
+    Clean dataset using the Adaptive Data Preparation Engine.
     
     Parameters
     ----------
@@ -67,7 +61,7 @@ def clean_dataset_v2(
     leakage_cols : list, optional
         Columns suspected of data leakage (handled specially, NOT dropped)
     use_adaptive : bool
-        Use adaptive engine (True) or legacy cleaning (False)
+        Kept for API compatibility (always True now)
     verbose : bool
         Enable verbose logging
         
@@ -75,23 +69,16 @@ def clean_dataset_v2(
     -------
     (cleaned_df, preparation_report)
     """
-    if use_adaptive and ADAPTIVE_ENGINE_AVAILABLE:
-        return clean_dataset_adaptive(
-            df, target_col, leakage_cols,
-            config={"verbose": verbose},
-            verbose=verbose
+    if not ADAPTIVE_ENGINE_AVAILABLE:
+        raise RuntimeError(
+            "Adaptive engine is not available. "
+            "Legacy cleaning has been removed — all cleaning must be adaptive."
         )
-    else:
-        # Fallback to legacy cleaning
-        cleaned_df = legacy_clean_dataset(
-            df, leakage_cols=leakage_cols, target_col=target_col
-        )
-        report = {
-            "version": "1.0 (legacy)",
-            "method": "legacy_clean_dataset",
-            "adaptive_available": ADAPTIVE_ENGINE_AVAILABLE,
-        }
-        return cleaned_df, report
+    return clean_dataset_adaptive(
+        df, target_col, leakage_cols,
+        config={"verbose": verbose},
+        verbose=verbose
+    )
 
 
 def clean_dataset(
@@ -136,19 +123,16 @@ def clean_dataset(
     if target_col not in df.columns:
         raise ValueError(f"Target column '{target_col}' not found. Available: {list(df.columns)}")
     
-    # Try adaptive cleaning first
+    # Use adaptive cleaning (only path now — legacy removed)
     if ADAPTIVE_ENGINE_AVAILABLE:
-        try:
-            cleaned_df, _ = clean_dataset_adaptive(
-                df, target_col, leakage_cols, verbose=False
-            )
-            return cleaned_df
-        except Exception as e:
-            print(f"Warning: Adaptive cleaning failed, falling back to legacy: {e}")
+        cleaned_df, _ = clean_dataset_adaptive(
+            df, target_col, leakage_cols, verbose=False
+        )
+        return cleaned_df
     
-    # Fallback to legacy cleaning
-    return legacy_clean_dataset(
-        df, leakage_cols=leakage_cols, target_col=target_col, fit_encoders=fit_encoders
+    raise RuntimeError(
+        "Adaptive engine is not available. "
+        "Legacy cleaning has been removed — all cleaning must be adaptive."
     )
 
 

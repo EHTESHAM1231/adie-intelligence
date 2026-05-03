@@ -451,6 +451,9 @@ def clean():
     orig_diagnostics = perform_diagnostics(df)
     orig_diagnostics['target_col'] = target_col
 
+    # Run intelligent engine BEFORE cleaning to generate strategy hints
+    intelligent_analysis_pre = run_intelligent_analysis(df, target_col)
+
     # Versioned backup
     version_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     version_dir = os.path.join(app.config['UPLOAD_FOLDER'], f'version_{version_timestamp}')
@@ -458,8 +461,10 @@ def clean():
     shutil.copy(filepath, os.path.join(version_dir, 'before_clean.csv'))
 
     # Clean using Adaptive Data Preparation Engine
+    # Strategy hints from intelligent engine guide the adaptive decisions
     cleaned_df, adaptive_report = clean_dataset_adaptive(
-        df, target_col, leakage_cols=leakage_cols, verbose=False
+        df, target_col, leakage_cols=leakage_cols, verbose=False,
+        strategy_hints=intelligent_analysis_pre
     )
 
     cleaned_filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'cleaned_dataset.csv')

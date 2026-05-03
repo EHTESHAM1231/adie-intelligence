@@ -98,6 +98,7 @@ class AdaptiveTransformer:
         
         # Get configuration
         config = config or {}
+        strategy_hints = config.get("strategy_hints", {})
         
         # Step 1: Handle missing values (NEVER drop columns)
         result_df = self._handle_missing_values(
@@ -137,7 +138,12 @@ class AdaptiveTransformer:
             result_df, target_col, domain, column_roles
         )
         
-        # Step 9: Final cleanup (no dropping!)
+        # Step 9: Apply dataset-type-specific feature engineering
+        result_df = self._apply_type_features(
+            result_df, target_col, dataset_type, column_roles, profile
+        )
+        
+        # Step 10: Final cleanup (no dropping!)
         result_df = self._final_cleanup(result_df, target_col)
         
         # Generate transformation report
@@ -595,6 +601,76 @@ class AdaptiveTransformer:
                 self._log_transformation("domain_features", "finance_features", {
                     "features_added": ['profit', 'profit_margin'],
                 })
+        
+        return df
+    
+    def _apply_type_features(
+        self,
+        df: pd.DataFrame,
+        target_col: str,
+        dataset_type: str,
+        column_roles: Dict,
+        profile: Dict
+    ) -> pd.DataFrame:
+        """
+        Apply dataset-type-specific feature engineering.
+        
+        - time_series:      lag features, rolling means (on target)
+        - relational:       entity frequency features (on identifiers)
+        - high_cardinality:  already handled by encoding strategy
+        - small datasets:   skip aggressive feature engineering
+        """
+        size_class = profile.get("size_class", "medium")
+        
+        # ── Small dataset protection ──────────────────────────────────────
+        if size_class == "small" and dataset_type not in ("time_series",):
+            self._log_transformation("dataset_type", "small_dataset_protection", {
+                "action": "Skipping aggressive feature engineering to preserve information",
+                "size_class": size_class,
+            })
+            return df
+        
+        # ── Time-series features ──────────────────────────────────────────
+        if dataset_type == "time_series":
+            if target_col in df.columns and pd.api.types.is_numeric_dtype(df[target_col]):
+                target_series = df[target_col]
+                
+                # Lag features
+                for lag in (1, 2):
+                    lag_col = f"{target_col}_lag_{lag}"
+                    df[lag_col] = target_series.shift(lag)
+                    self.added_columns.append(lag_col)
+                
+                # Rolling mean
+                rolling_col = f"{target_col}_rolling_mean_3"
+                df[rolling_col] = target_series.rolling(window=3, min_periods=1).mean()
+                self.added_columns.append(rolling_col)
+                
+                # Fill NaN introduced by shift/rolling with 0
+                for c in [f"{target_col}_lag_1", f"{target_col}_lag_2", rolling_col]:
+                    df[c] = df[c].fillna(0)
+                
+                self._log_transformation("dataset_type", "time_series_features", {
+                    "features_added": [f"{target_col}_lag_1", f"{target_col}_lag_2", rolling_col],
+                    "note": "Chronological order preserved — no shuffle",
+                })
+        
+        # ── Relational / entity features ──────────────────────────────────
+        elif dataset_type == "relational":
+            identifier_cols = [
+                col for col, info in column_roles.items()
+                if info.get("role") == "identifier" and col != target_col and col in df.columns
+            ]
+            
+            for id_col in identifier_cols[:2]:  # limit to first 2 identifiers
+                freq_col = f"{id_col}_entity_freq"
+                if freq_col not in df.columns:
+                    df[freq_col] = df.groupby(id_col)[id_col].transform("count")
+                    self.added_columns.append(freq_col)
+                    self._log_transformation(id_col, "relational_entity_frequency", {
+                        "identifier": id_col,
+                        "feature": freq_col,
+                    })
         
         return df
     

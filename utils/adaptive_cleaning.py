@@ -38,7 +38,8 @@ def clean_dataset_adaptive(
     target_col: str,
     leakage_cols: Optional[List[str]] = None,
     config: Optional[Dict] = None,
-    verbose: bool = False
+    verbose: bool = False,
+    strategy_hints: Optional[Dict] = None
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     Clean dataset using the new Adaptive Data Preparation Engine.
@@ -63,6 +64,9 @@ def clean_dataset_adaptive(
         Configuration options
     verbose : bool
         Enable verbose logging
+    strategy_hints : dict, optional
+        Strategy hints from intelligent_engine.run_intelligent_analysis().
+        When provided, the adaptive engine uses these to guide decisions.
         
     Returns
     -------
@@ -71,6 +75,11 @@ def clean_dataset_adaptive(
     # Initialize engine with config
     engine_config = config or {}
     engine_config["verbose"] = verbose
+    
+    # Merge intelligent engine strategy hints into config
+    if strategy_hints and isinstance(strategy_hints, dict):
+        strategies = strategy_hints.get("strategies", {})
+        engine_config["strategy_hints"] = strategies
     
     engine = AdaptiveDataPreparationEngine(engine_config)
     
@@ -85,6 +94,15 @@ def clean_dataset_adaptive(
     
     # Run adaptive preparation
     prepared_df, report = engine.prepare(df, target_col, user_protections)
+    
+    # ── GLOBAL SAFETY ASSERTION ───────────────────────────────────────────
+    # Verify that NO original column was lost during preparation.
+    original_cols = set(df.columns)
+    final_cols = set(prepared_df.columns)
+    assert original_cols.issubset(final_cols), (
+        f"CRITICAL ERROR: Column loss detected — cleaning is destructive! "
+        f"Missing columns: {original_cols - final_cols}"
+    )
     
     # Save artifacts
     _save_artifacts(engine, report)

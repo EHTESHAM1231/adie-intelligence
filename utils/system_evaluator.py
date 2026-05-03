@@ -1,10 +1,12 @@
 """
-ADIE — System Self-Evaluator
-Runs the full ADIE pipeline (diagnostics → cleaning → training) on a list of
-datasets and measures how much the system improves each one.
+ADIE — System Self-Evaluator (v3 — Adaptive Pipeline)
+======================================================
 
-Designed to be called from a dedicated /evaluate route and displayed in the
-System Evaluation Dashboard on the result page.
+Runs the full ADIE adaptive pipeline (diagnostics → cleaning → training)
+on a list of datasets and measures how much the system improves each one.
+
+All cleaning now uses the non-destructive Adaptive Data Preparation Engine.
+NO COLUMNS ARE EVER DROPPED.
 """
 
 import os
@@ -14,7 +16,7 @@ import pandas as pd
 import numpy as np
 
 from utils.data_analysis import perform_diagnostics
-from utils.data_cleaning import clean_dataset
+from utils.adaptive_cleaning import clean_dataset          # adaptive, non-destructive
 from utils.model_training import train_and_evaluate
 from utils.target_detector import detect_target_column
 
@@ -26,29 +28,6 @@ from utils.target_detector import detect_target_column
 def evaluate_system(datasets: list) -> dict:
     """
     Run the full ADIE pipeline on each dataset and collect improvement metrics.
-
-    Parameters
-    ----------
-    datasets : list of dicts
-        Each dict must have:
-          - "name"  : str  — display name
-          - "path"  : str  — absolute or relative path to CSV file
-          - "target": str | None — target column name (None = auto-detect)
-
-    Returns
-    -------
-    {
-        "results": [ per-dataset result dicts ],
-        "aggregate": {
-            "avg_accuracy_improvement": float,
-            "avg_f1_improvement": float,
-            "avg_issues_resolved": float,
-            "success_rate": float,
-            "total_datasets": int,
-            "successful": int,
-            "failed": int
-        }
-    }
     """
     results = []
 
@@ -69,9 +48,7 @@ def evaluate_system(datasets: list) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _evaluate_single(ds: dict) -> dict:
-    """
-    Run the full pipeline on one dataset and return a result dict.
-    """
+    """Run the full pipeline on one dataset and return a result dict."""
     name = ds.get("name", "Unknown")
     path = ds.get("path", "")
     target_override = ds.get("target", None)
@@ -146,10 +123,11 @@ def _evaluate_single(ds: dict) -> dict:
         result["duplicates_before"] = int(diag_before["duplicates"])
         result["outliers_before"] = int(diag_before["outliers"]["total"])
 
-        # ── Stage 2: Cleaning ─────────────────────────────────────────────
+        # ── Stage 2: Cleaning (adaptive, non-destructive) ─────────────────
         leakage_cols = diag_before.get("leakage_risk", [])
         leakage_cols = [c for c in leakage_cols if c != target_col]
 
+        # Uses the adaptive engine — NO columns are dropped
         cleaned_df = clean_dataset(df, leakage_cols=leakage_cols, target_col=target_col)
 
         diag_after = perform_diagnostics(cleaned_df)
@@ -160,9 +138,7 @@ def _evaluate_single(ds: dict) -> dict:
         result["duplicates_after"] = int(diag_after["duplicates"])
         result["outliers_after"] = int(diag_after["outliers"]["total"])
 
-        # ── Stage 3: Training (before cleaning — on processed original) ───
-        # We apply minimal cleaning to the original so it's trainable,
-        # but we do NOT apply the full repair pipeline.
+        # ── Stage 3: Training (before cleaning — minimal baseline) ────────
         df_orig_processed = _minimal_process(df, target_col)
 
         orig_results, task_type = train_and_evaluate(
@@ -170,8 +146,7 @@ def _evaluate_single(ds: dict) -> dict:
         )
         result["task_type"] = task_type
 
-        # ── Stage 3: Training (after cleaning) ────────────────────────────
-        # Ensure target still exists in cleaned_df
+        # ── Stage 4: Training (after cleaning) ────────────────────────────
         if target_col not in cleaned_df.columns:
             result["error"] = "Target column lost during cleaning"
             return result
@@ -227,8 +202,11 @@ def _evaluate_single(ds: dict) -> dict:
 def _minimal_process(df: pd.DataFrame, target_col: str) -> pd.DataFrame:
     """
     Apply just enough processing to make the original dataset trainable
-    (drop non-numeric, fill NaN) without running the full repair pipeline.
+    (encode non-numeric, fill NaN) without running the full repair pipeline.
     This gives us a fair "before" baseline.
+
+    NOTE: This is intentionally simple — it does NOT use the adaptive engine
+    so we can measure the improvement the engine provides.
     """
     df = df.copy()
     df.columns = df.columns.str.strip()
@@ -240,11 +218,12 @@ def _minimal_process(df: pd.DataFrame, target_col: str) -> pd.DataFrame:
 
     df = df[numeric_cols]
 
-    # Fill NaN with median
+    # Fill NaN with median for numeric columns
     for col in df.columns:
-        if col != target_col:
-            median_val = df[col].median()
-            df[col] = df[col].fillna(median_val if not pd.isna(median_val) else 0)
+        if col != target_col and pd.api.types.is_numeric_dtype(df[col]):
+            numeric_series = pd.to_numeric(df[col], errors='coerce')
+            median_val = numeric_series.median()
+            df[col] = numeric_series.fillna(median_val if not pd.isna(median_val) else 0)
 
     # Encode target if needed
     if df[target_col].dtype == 'object':
@@ -259,9 +238,7 @@ def _minimal_process(df: pd.DataFrame, target_col: str) -> pd.DataFrame:
 
 
 def _aggregate(results: list) -> dict:
-    """
-    Compute aggregate statistics across all dataset results.
-    """
+    """Compute aggregate statistics across all dataset results."""
     successful = [r for r in results if r["success"]]
     failed = [r for r in results if not r["success"]]
 
@@ -271,32 +248,27 @@ def _aggregate(results: list) -> dict:
 
     success_rate = round(n_success / n_total, 4) if n_total > 0 else 0.0
 
-    # Accuracy improvement
     acc_improvements = [
         r["accuracy_improvement"] for r in successful
         if r["accuracy_improvement"] is not None
     ]
     avg_acc_improvement = round(float(np.mean(acc_improvements)), 4) if acc_improvements else None
 
-    # F1 improvement
     f1_improvements = [
         r["f1_improvement"] for r in successful
         if r["f1_improvement"] is not None
     ]
     avg_f1_improvement = round(float(np.mean(f1_improvements)), 4) if f1_improvements else None
 
-    # R2 improvement (regression)
     r2_improvements = [
         r.get("r2_improvement") for r in successful
         if r.get("r2_improvement") is not None
     ]
     avg_r2_improvement = round(float(np.mean(r2_improvements)), 4) if r2_improvements else None
 
-    # Issues resolved
     issues_resolved = [r["issues_resolved"] for r in successful]
     avg_issues_resolved = round(float(np.mean(issues_resolved)), 2) if issues_resolved else 0.0
 
-    # Datasets that improved
     improved = [
         r for r in successful
         if (r.get("accuracy_improvement") or 0) > 0 or
