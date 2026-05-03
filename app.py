@@ -56,14 +56,11 @@ def _artifact_path(dataset_id: str, name: str) -> str:
 def _get_dataset_hash(df: pd.DataFrame) -> str:
     """
     Compute a stable MD5 fingerprint of the dataframe content.
-    Used to detect unexpected dataset substitution between pipeline stages.
+    Uses the CSV string representation so the hash is stable across
+    save/reload cycles (avoids floating-point precision drift).
     """
-    try:
-        row_hashes = pd.util.hash_pandas_object(df, index=True).values
-        return hashlib.md5(row_hashes.tobytes()).hexdigest()
-    except Exception:
-        # Fallback: hash the CSV string representation
-        return hashlib.md5(df.to_csv(index=False).encode()).hexdigest()
+    csv_bytes = df.to_csv(index=False).encode('utf-8')
+    return hashlib.md5(csv_bytes).hexdigest()
 
 
 def _verify_dataset_identity(df: pd.DataFrame, dataset_id: str, stage: str):
@@ -460,6 +457,8 @@ def analyze():
         return redirect(url_for('dashboard'))
 
     # ── Store dataset fingerprint and columns in session ──────────────────
+    # Hash is computed on the df returned by _run_stage1, which was read
+    # from the saved CSV — so the hash is CSV-stable across stages.
     session['dataset_hash'] = _get_dataset_hash(df)
     session['original_columns'] = df.columns.tolist()
     session['target_col'] = target_col
