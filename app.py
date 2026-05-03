@@ -5,6 +5,8 @@ os.environ['OPENBLAS_NUM_THREADS'] = '1'
 os.environ['OMP_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
 
+import uuid
+import hashlib
 import pandas as pd
 import numpy as np
 import json
@@ -26,6 +28,73 @@ from functools import wraps
 
 # ── Demo mode: auto-sample large datasets to prevent Render timeouts ──────────
 DEMO_MAX_ROWS = 10000
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DATASET IDENTITY & INTEGRITY HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _new_dataset_id() -> str:
+    """Generate a unique ID for this dataset session."""
+    return str(uuid.uuid4())
+
+
+def _raw_path(dataset_id: str) -> str:
+    """Isolated raw CSV path for this dataset."""
+    return os.path.join(UPLOAD_FOLDER, f"{dataset_id}_raw.csv")
+
+
+def _cleaned_path(dataset_id: str) -> str:
+    """Isolated cleaned CSV path for this dataset."""
+    return os.path.join(UPLOAD_FOLDER, f"{dataset_id}_cleaned.csv")
+
+
+def _artifact_path(dataset_id: str, name: str) -> str:
+    """Isolated JSON artifact path for this dataset."""
+    return os.path.join(UPLOAD_FOLDER, f"{dataset_id}_{name}")
+
+
+def _get_dataset_hash(df: pd.DataFrame) -> str:
+    """
+    Compute a stable MD5 fingerprint of the dataframe content.
+    Used to detect unexpected dataset substitution between pipeline stages.
+    """
+    try:
+        row_hashes = pd.util.hash_pandas_object(df, index=True).values
+        return hashlib.md5(row_hashes.tobytes()).hexdigest()
+    except Exception:
+        # Fallback: hash the CSV string representation
+        return hashlib.md5(df.to_csv(index=False).encode()).hexdigest()
+
+
+def _verify_dataset_identity(df: pd.DataFrame, dataset_id: str, stage: str):
+    """
+    Hard-stop guard: verify the loaded dataframe matches what was analyzed.
+    Raises RuntimeError if fingerprint or columns don't match.
+    """
+    stored_hash = session.get('dataset_hash')
+    stored_cols = session.get('original_columns', [])
+
+    current_hash = _get_dataset_hash(df)
+    current_cols = df.columns.tolist()
+
+    print(f"[ADIE] {stage} | dataset_id={dataset_id}")
+    print(f"[ADIE] {stage} | shape={df.shape}")
+    print(f"[ADIE] {stage} | columns={current_cols}")
+    print(f"[ADIE] {stage} | hash={current_hash}")
+
+    if stored_hash and current_hash != stored_hash:
+        raise RuntimeError(
+            f"DATA PIPELINE CORRUPTION DETECTED at {stage}: "
+            f"Dataset fingerprint mismatch. "
+            f"Expected {stored_hash[:8]}... got {current_hash[:8]}..."
+        )
+
+    if stored_cols and current_cols != stored_cols:
+        raise RuntimeError(
+            f"DATA PIPELINE CORRUPTION DETECTED at {stage}: "
+            f"Column mismatch. "
+            f"Expected {stored_cols} got {current_cols}"
+        )
 
 app = Flask(
     __name__,
@@ -221,11 +290,14 @@ def preview():
 # SHARED PIPELINE HELPER
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _run_stage1(csv_path: str, filename: str, target_col: str):
+def _run_stage1(csv_path: str, filename: str, target_col: str, dataset_id: str):
     """
     Stage 1: load CSV, detect types, run diagnostics + expert analysis,
     run intelligent engine, save all JSON artefacts.
     Returns (df, metadata, diagnostics, expert_report, intelligent_analysis).
+
+    All artifacts are saved to both the isolated per-dataset path and the
+    global path so templates can read them without changes.
     """
     df = pd.read_csv(csv_path)
     df.columns = df.columns.str.strip()
@@ -240,10 +312,17 @@ def _run_stage1(csv_path: str, filename: str, target_col: str):
         raise ValueError(f"Target column '{target_col}' not found. "
                          f"Available: {df.columns.tolist()}")
 
+    print(f"[ADIE] STAGE 1 | dataset_id={dataset_id}")
+    print(f"[ADIE] STAGE 1 | filename={filename}")
+    print(f"[ADIE] STAGE 1 | shape={df.shape}")
+    print(f"[ADIE] STAGE 1 | columns={df.columns.tolist()}")
+    print(f"[ADIE] STAGE 1 | target={target_col}")
+
     col_types = detect_column_types(df, target_col)
 
     metadata = {
         "filename": filename,
+        "dataset_id": dataset_id,
         "size_kb": round(os.path.getsize(csv_path) / 1024, 2),
         "rows": df.shape[0],
         "columns": df.shape[1],
@@ -260,33 +339,53 @@ def _run_stage1(csv_path: str, filename: str, target_col: str):
     }
 
     diagnostics = perform_diagnostics(df)
-    # Attach target col to diagnostics so downstream stages can read it
     diagnostics['target_col'] = target_col
 
     expert_report = analyze_dataset_expertly(df, diagnostics)
-
-    # Intelligent engine analysis
     intelligent_analysis = run_intelligent_analysis(df, target_col)
 
-    # Persist artefacts
-    _save_json('metadata.json', metadata)
-    _save_json('diagnostics.json', diagnostics)
-    _save_json('expert_report.json', expert_report)
-    _save_json('intelligent_analysis.json', intelligent_analysis)
+    # Persist artifacts (both isolated and global paths)
+    _save_json('metadata.json', metadata, dataset_id)
+    _save_json('diagnostics.json', diagnostics, dataset_id)
+    _save_json('expert_report.json', expert_report, dataset_id)
+    _save_json('intelligent_analysis.json', intelligent_analysis, dataset_id)
 
     return df, metadata, diagnostics, expert_report, intelligent_analysis
 
 
-def _save_json(filename: str, data):
-    path = os.path.join(UPLOAD_FOLDER, filename)
-    with open(path, 'w') as f:
+def _save_json(filename: str, data, dataset_id: str = None):
+    """
+    Save JSON artifact. If dataset_id is provided, saves to an isolated
+    per-dataset path AND to the legacy global path for backward compatibility
+    with templates that load from the global path.
+    """
+    # Always write to global path (templates read from here)
+    global_path = os.path.join(UPLOAD_FOLDER, filename)
+    with open(global_path, 'w') as f:
         json.dump(data, f, default=str)
 
+    # Also write to isolated per-dataset path
+    if dataset_id:
+        isolated_path = _artifact_path(dataset_id, filename)
+        with open(isolated_path, 'w') as f:
+            json.dump(data, f, default=str)
 
-def _load_json(filename: str):
-    path = os.path.join(UPLOAD_FOLDER, filename)
-    if os.path.exists(path):
-        with open(path, 'r') as f:
+
+def _load_json(filename: str, dataset_id: str = None):
+    """
+    Load JSON artifact. Prefers the isolated per-dataset path when
+    dataset_id is provided, falls back to global path.
+    """
+    if dataset_id:
+        isolated_path = _artifact_path(dataset_id, filename)
+        if os.path.exists(isolated_path):
+            with open(isolated_path, 'r') as f:
+                return json.load(f)
+
+    # Fallback to global path
+    global_path = os.path.join(UPLOAD_FOLDER, filename)
+    if os.path.exists(global_path):
+        with open(global_path, 'r') as f:
             return json.load(f)
     return None
 
@@ -307,34 +406,46 @@ def analyze():
         flash('Please upload a valid CSV or ZIP file')
         return redirect(url_for('dashboard'))
 
+    # ── Generate unique dataset ID for this session ───────────────────────
+    dataset_id = _new_dataset_id()
+    session['dataset_id'] = dataset_id
+    # Clear any previous session state
+    session.pop('dataset_hash', None)
+    session.pop('original_columns', None)
+
     filename = file.filename
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    file.save(filepath)
+    temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"_tmp_{dataset_id}_{filename}")
+    file.save(temp_path)
 
-    # Extract CSV from ZIP if needed
-    if filename.endswith('.zip'):
-        with zipfile.ZipFile(filepath, 'r') as zip_ref:
-            csv_files = [f for f in zip_ref.namelist() if f.endswith('.csv')]
-            if not csv_files:
-                flash('No CSV file found inside the ZIP')
-                return redirect(url_for('dashboard'))
-            zip_ref.extract(csv_files[0], app.config['UPLOAD_FOLDER'])
-            csv_path = os.path.join(app.config['UPLOAD_FOLDER'], csv_files[0])
-        target_path = os.path.join(app.config['UPLOAD_FOLDER'], 'current_dataset.csv')
-        if os.path.exists(target_path):
-            os.remove(target_path)
-        os.rename(csv_path, target_path)
-    else:
-        target_path = os.path.join(app.config['UPLOAD_FOLDER'], 'current_dataset.csv')
-        if os.path.exists(target_path):
-            os.remove(target_path)
-        os.rename(filepath, target_path)
+    # ── Extract CSV from ZIP if needed ────────────────────────────────────
+    try:
+        if filename.endswith('.zip'):
+            with zipfile.ZipFile(temp_path, 'r') as zip_ref:
+                csv_files = [f for f in zip_ref.namelist() if f.endswith('.csv')]
+                if not csv_files:
+                    flash('No CSV file found inside the ZIP')
+                    return redirect(url_for('dashboard'))
+                zip_ref.extract(csv_files[0], app.config['UPLOAD_FOLDER'])
+                extracted = os.path.join(app.config['UPLOAD_FOLDER'], csv_files[0])
+                raw_csv = _raw_path(dataset_id)
+                os.rename(extracted, raw_csv)
+            os.remove(temp_path)
+        else:
+            raw_csv = _raw_path(dataset_id)
+            os.rename(temp_path, raw_csv)
+    except Exception as e:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        flash(f'File processing error: {e}')
+        return redirect(url_for('dashboard'))
 
-    # Determine target column
-    # User may have submitted a selection from the preview dropdown
+    # ── Also write to legacy global path for backward compat ─────────────
+    shutil.copy(raw_csv, os.path.join(UPLOAD_FOLDER, 'current_dataset.csv'))
+
+    # ── Determine target column ───────────────────────────────────────────
     user_target = request.form.get('target_column', '').strip()
     if not user_target or user_target == '__auto__':
-        df_tmp = pd.read_csv(target_path)
+        df_tmp = pd.read_csv(raw_csv)
         df_tmp.columns = df_tmp.columns.str.strip()
         detection = detect_target_column(df_tmp)
         target_col = detection['recommended']
@@ -343,10 +454,17 @@ def analyze():
 
     try:
         df, metadata, diagnostics, expert_report, intelligent_analysis = \
-            _run_stage1(target_path, filename, target_col)
+            _run_stage1(raw_csv, filename, target_col, dataset_id)
     except ValueError as e:
         flash(str(e))
         return redirect(url_for('dashboard'))
+
+    # ── Store dataset fingerprint and columns in session ──────────────────
+    session['dataset_hash'] = _get_dataset_hash(df)
+    session['original_columns'] = df.columns.tolist()
+    session['target_col'] = target_col
+
+    print(f"[ADIE] ANALYZE COMPLETE | dataset_id={dataset_id} | hash={session['dataset_hash'][:8]}...")
 
     return render_template(
         'result.html',
@@ -375,34 +493,52 @@ def analyze_default():
         flash('Selected default file not found')
         return redirect(url_for('dashboard'))
 
-    target_path = os.path.join(app.config['UPLOAD_FOLDER'], 'current_dataset.csv')
+    # ── Generate unique dataset ID — does NOT overwrite user uploads ──────
+    dataset_id = _new_dataset_id()
+    session['dataset_id'] = dataset_id
+    session.pop('dataset_hash', None)
+    session.pop('original_columns', None)
 
-    if selected_file.endswith('.zip'):
-        with zipfile.ZipFile(source_path, 'r') as zip_ref:
-            csv_files = [f for f in zip_ref.namelist() if f.endswith('.csv')]
-            if not csv_files:
-                flash('No CSV file found inside the ZIP')
-                return redirect(url_for('dashboard'))
-            zip_ref.extract(csv_files[0], app.config['UPLOAD_FOLDER'])
-            temp_path = os.path.join(app.config['UPLOAD_FOLDER'], csv_files[0])
-            if os.path.exists(target_path):
-                os.remove(target_path)
-            os.rename(temp_path, target_path)
-    else:
-        shutil.copy(source_path, target_path)
+    raw_csv = _raw_path(dataset_id)
 
-    # Auto-detect target
-    df_tmp = pd.read_csv(target_path)
+    try:
+        if selected_file.endswith('.zip'):
+            with zipfile.ZipFile(source_path, 'r') as zip_ref:
+                csv_files = [f for f in zip_ref.namelist() if f.endswith('.csv')]
+                if not csv_files:
+                    flash('No CSV file found inside the ZIP')
+                    return redirect(url_for('dashboard'))
+                zip_ref.extract(csv_files[0], app.config['UPLOAD_FOLDER'])
+                extracted = os.path.join(app.config['UPLOAD_FOLDER'], csv_files[0])
+                os.rename(extracted, raw_csv)
+        else:
+            shutil.copy(source_path, raw_csv)
+    except Exception as e:
+        flash(f'File processing error: {e}')
+        return redirect(url_for('dashboard'))
+
+    # ── Also write to legacy global path ─────────────────────────────────
+    shutil.copy(raw_csv, os.path.join(UPLOAD_FOLDER, 'current_dataset.csv'))
+
+    # ── Auto-detect target ────────────────────────────────────────────────
+    df_tmp = pd.read_csv(raw_csv)
     df_tmp.columns = df_tmp.columns.str.strip()
     detection = detect_target_column(df_tmp)
     target_col = detection['recommended']
 
     try:
         df, metadata, diagnostics, expert_report, intelligent_analysis = \
-            _run_stage1(target_path, selected_file, target_col)
+            _run_stage1(raw_csv, selected_file, target_col, dataset_id)
     except ValueError as e:
         flash(str(e))
         return redirect(url_for('dashboard'))
+
+    # ── Store fingerprint ─────────────────────────────────────────────────
+    session['dataset_hash'] = _get_dataset_hash(df)
+    session['original_columns'] = df.columns.tolist()
+    session['target_col'] = target_col
+
+    print(f"[ADIE] ANALYZE_DEFAULT COMPLETE | dataset_id={dataset_id} | hash={session['dataset_hash'][:8]}...")
 
     return render_template(
         'result.html',
@@ -421,24 +557,53 @@ def analyze_default():
 @app.route('/clean', methods=['POST'])
 @login_required
 def clean():
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'current_dataset.csv')
-    if not os.path.exists(filepath):
-        flash('No dataset found to clean')
+    # ── Resolve dataset ID from session ───────────────────────────────────
+    dataset_id = session.get('dataset_id')
+    if not dataset_id:
+        flash('Session expired or no dataset found. Please upload again.')
         return redirect(url_for('dashboard'))
 
-    # Load persisted artefacts
-    old_diag = _load_json('diagnostics.json') or {}
-    metadata = _load_json('metadata.json') or {}
+    raw_csv = _raw_path(dataset_id)
+    cleaned_csv = _cleaned_path(dataset_id)
 
-    # Resolve target column (from metadata → form → auto-detect)
+    if not os.path.exists(raw_csv):
+        flash('Dataset file not found. Please upload again.')
+        return redirect(url_for('dashboard'))
+
+    # ── Load persisted artifacts (prefer isolated, fallback to global) ────
+    old_diag = _load_json('diagnostics.json', dataset_id) or {}
+    metadata = _load_json('metadata.json', dataset_id) or {}
+
+    # ── Resolve target column ─────────────────────────────────────────────
     target_col = (
         request.form.get('target_column', '').strip()
+        or session.get('target_col', '')
         or metadata.get('target_col', '')
         or old_diag.get('target_col', '')
     )
 
-    df = pd.read_csv(filepath)
+    # ── Load the CORRECT raw dataset ─────────────────────────────────────
+    df = pd.read_csv(raw_csv)
     df.columns = df.columns.str.strip()
+
+    print(f"[ADIE] CLEAN INPUT | dataset_id={dataset_id}")
+    print(f"[ADIE] CLEAN INPUT | shape={df.shape}")
+    print(f"[ADIE] CLEAN INPUT | columns={df.columns.tolist()}")
+
+    # ── CONSISTENCY CHECK 1: Column identity ─────────────────────────────
+    expected_columns = session.get('original_columns', [])
+    if expected_columns:
+        if df.columns.tolist() != expected_columns:
+            raise RuntimeError(
+                f"DATA PIPELINE CORRUPTION DETECTED: "
+                f"Column mismatch before cleaning. "
+                f"Expected {expected_columns}, got {df.columns.tolist()}"
+            )
+    else:
+        session['original_columns'] = df.columns.tolist()
+
+    # ── CONSISTENCY CHECK 2: Dataset fingerprint ─────────────────────────
+    _verify_dataset_identity(df, dataset_id, "CLEAN")
 
     if not target_col or target_col not in df.columns:
         detection = detect_target_column(df)
@@ -447,44 +612,59 @@ def clean():
     leakage_cols = old_diag.get('leakage_risk', [])
     leakage_cols = [c for c in leakage_cols if c != target_col]
 
-    # Diagnostics BEFORE cleaning
+    # ── Diagnostics BEFORE cleaning ───────────────────────────────────────
     orig_diagnostics = perform_diagnostics(df)
     orig_diagnostics['target_col'] = target_col
 
-    # Run intelligent engine BEFORE cleaning to generate strategy hints
+    # ── Run intelligent engine BEFORE cleaning ────────────────────────────
     intelligent_analysis_pre = run_intelligent_analysis(df, target_col)
 
-    # Versioned backup
+    # ── Versioned backup ──────────────────────────────────────────────────
     version_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     version_dir = os.path.join(app.config['UPLOAD_FOLDER'], f'version_{version_timestamp}')
     os.makedirs(version_dir, exist_ok=True)
-    shutil.copy(filepath, os.path.join(version_dir, 'before_clean.csv'))
+    shutil.copy(raw_csv, os.path.join(version_dir, 'before_clean.csv'))
 
-    # Clean using Adaptive Data Preparation Engine
-    # Strategy hints from intelligent engine guide the adaptive decisions
+    # ── Clean using Adaptive Data Preparation Engine ──────────────────────
     cleaned_df, adaptive_report = clean_dataset_adaptive(
         df, target_col, leakage_cols=leakage_cols, verbose=False,
         strategy_hints=intelligent_analysis_pre
     )
 
-    cleaned_filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'cleaned_dataset.csv')
-    cleaned_df.to_csv(cleaned_filepath, index=False)
-    shutil.copy(cleaned_filepath, os.path.join(version_dir, 'after_clean.csv'))
+    print(f"[ADIE] CLEAN OUTPUT | dataset_id={dataset_id}")
+    print(f"[ADIE] CLEAN OUTPUT | shape={cleaned_df.shape}")
+    print(f"[ADIE] CLEAN OUTPUT | columns={cleaned_df.columns.tolist()}")
 
-    # Diagnostics AFTER cleaning (use adaptive diagnostics for richer info)
+    # ── CONSISTENCY CHECK 3: No columns lost after cleaning ───────────────
+    original_cols_set = set(df.columns)
+    cleaned_cols_set = set(cleaned_df.columns)
+    if not original_cols_set.issubset(cleaned_cols_set):
+        lost = original_cols_set - cleaned_cols_set
+        raise RuntimeError(
+            f"CRITICAL: Columns were lost during cleaning: {lost}"
+        )
+
+    # ── Save cleaned dataset to isolated path ─────────────────────────────
+    cleaned_df.to_csv(cleaned_csv, index=False)
+    # Also write to legacy global path for backward compat
+    cleaned_df.to_csv(os.path.join(UPLOAD_FOLDER, 'cleaned_dataset.csv'), index=False)
+    shutil.copy(cleaned_csv, os.path.join(version_dir, 'after_clean.csv'))
+
+    # ── Diagnostics AFTER cleaning ────────────────────────────────────────
     diagnostics = perform_diagnostics(cleaned_df)
     diagnostics['target_col'] = target_col
 
     expert_report = analyze_dataset_expertly(cleaned_df, diagnostics, is_repaired=True)
     intelligent_analysis = run_intelligent_analysis(cleaned_df, target_col)
 
-    # Version info
+    # ── Version info ──────────────────────────────────────────────────────
     orig_issue_types = {i['type'] for i in orig_diagnostics.get('identified_issues', [])}
     clean_issue_types = {i['type'] for i in diagnostics.get('identified_issues', [])}
     resolved = orig_issue_types - clean_issue_types
 
     version_info = {
         'timestamp': version_timestamp,
+        'dataset_id': dataset_id,
         'original_rows': len(df),
         'cleaned_rows': len(cleaned_df),
         'original_columns': len(df.columns),
@@ -508,19 +688,19 @@ def clean():
     with open(os.path.join(version_dir, 'version_info.json'), 'w') as f:
         json.dump(version_info, f)
 
-    # Update metadata with new column info
+    # ── Update metadata ───────────────────────────────────────────────────
     if metadata:
         metadata['target_col'] = target_col
         if 'column_types' in diagnostics:
             metadata['column_types'] = diagnostics['column_types']
 
-    # Persist
-    _save_json('original_diagnostics.json', orig_diagnostics)
-    _save_json('diagnostics.json', diagnostics)
-    _save_json('expert_report.json', expert_report)
-    _save_json('intelligent_analysis.json', intelligent_analysis)
-    _save_json('metadata.json', metadata)
-    _save_json('adaptive_report.json', adaptive_report)
+    # ── Persist artifacts (isolated + global) ─────────────────────────────
+    _save_json('original_diagnostics.json', orig_diagnostics, dataset_id)
+    _save_json('diagnostics.json', diagnostics, dataset_id)
+    _save_json('expert_report.json', expert_report, dataset_id)
+    _save_json('intelligent_analysis.json', intelligent_analysis, dataset_id)
+    _save_json('metadata.json', metadata, dataset_id)
+    _save_json('adaptive_report.json', adaptive_report, dataset_id)
 
     flash('ADIE Pipeline: Dataset successfully repaired and optimized!')
 
@@ -544,57 +724,83 @@ def clean():
 @app.route('/train', methods=['POST'])
 @login_required
 def train():
-    orig_filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'current_dataset.csv')
-    cleaned_filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'cleaned_dataset.csv')
-    selected_algo = request.form.get('algorithm', 'All Algorithms')
-
-    if not os.path.exists(orig_filepath):
-        flash('Original dataset not found')
+    # ── Resolve dataset ID from session ───────────────────────────────────
+    dataset_id = session.get('dataset_id')
+    if not dataset_id:
+        flash('Session expired or no dataset found. Please upload again.')
         return redirect(url_for('dashboard'))
 
-    # Load persisted artefacts
-    metadata = _load_json('metadata.json') or {}
-    expert_report = _load_json('expert_report.json')
-    diagnostics = _load_json('diagnostics.json') or {}
-    intelligent_analysis = _load_json('intelligent_analysis.json')
+    raw_csv = _raw_path(dataset_id)
+    cleaned_csv = _cleaned_path(dataset_id)
 
-    # Resolve target column
+    if not os.path.exists(raw_csv):
+        flash('Original dataset not found. Please upload again.')
+        return redirect(url_for('dashboard'))
+
+    selected_algo = request.form.get('algorithm', 'All Algorithms')
+
+    # ── Load persisted artifacts ──────────────────────────────────────────
+    metadata = _load_json('metadata.json', dataset_id) or {}
+    expert_report = _load_json('expert_report.json', dataset_id)
+    diagnostics = _load_json('diagnostics.json', dataset_id) or {}
+    intelligent_analysis = _load_json('intelligent_analysis.json', dataset_id)
+
+    # ── Resolve target column ─────────────────────────────────────────────
     target_col = (
         request.form.get('target_column', '').strip()
+        or session.get('target_col', '')
         or metadata.get('target_col', '')
         or diagnostics.get('target_col', '')
     )
 
-    df_orig = pd.read_csv(orig_filepath)
+    # ── Load the CORRECT raw dataset ─────────────────────────────────────
+    df_orig = pd.read_csv(raw_csv)
     df_orig.columns = df_orig.columns.str.strip()
+
+    print(f"[ADIE] TRAIN | dataset_id={dataset_id}")
+    print(f"[ADIE] TRAIN | raw shape={df_orig.shape}")
+    print(f"[ADIE] TRAIN | raw columns={df_orig.columns.tolist()}")
+
+    # ── Verify dataset identity ───────────────────────────────────────────
+    _verify_dataset_identity(df_orig, dataset_id, "TRAIN")
 
     if not target_col or target_col not in df_orig.columns:
         detection = detect_target_column(df_orig)
         target_col = detection['recommended']
 
-    # Process original for baseline training
+    # ── Baseline: process original for comparison ─────────────────────────
     df_orig_processed = clean_dataset(df_orig, target_col=target_col)
 
     orig_results, task_type = train_and_evaluate(
         df_orig_processed, target_col, selected_algo
     )
 
+    # ── Cleaned: load the CORRECT cleaned dataset ─────────────────────────
     cleaned_results = None
-    if os.path.exists(cleaned_filepath):
-        df_cleaned = pd.read_csv(cleaned_filepath)
+    if os.path.exists(cleaned_csv):
+        df_cleaned = pd.read_csv(cleaned_csv)
         df_cleaned.columns = df_cleaned.columns.str.strip()
+
+        print(f"[ADIE] TRAIN | cleaned shape={df_cleaned.shape}")
+        print(f"[ADIE] TRAIN | cleaned columns={df_cleaned.columns.tolist()}")
+
         if target_col in df_cleaned.columns:
             cleaned_results, _ = train_and_evaluate(df_cleaned, target_col, selected_algo)
+        else:
+            print(f"[ADIE] TRAIN WARNING: target '{target_col}' not in cleaned dataset")
+    else:
+        print(f"[ADIE] TRAIN: No cleaned dataset found at {cleaned_csv}")
 
-    # Persist ML results
+    # ── Persist ML results ────────────────────────────────────────────────
     results_data = {
         'orig_results': orig_results,
         'cleaned_results': cleaned_results,
         'task_type': task_type,
         'selected_algo': selected_algo,
-        'target_col': target_col
+        'target_col': target_col,
+        'dataset_id': dataset_id,
     }
-    _save_json('ml_results.json', results_data)
+    _save_json('ml_results.json', results_data, dataset_id)
 
     return render_template(
         'result.html',
@@ -619,26 +825,30 @@ def train():
 @login_required
 def evaluate():
     """
-    Run ADIE self-evaluation across all available datasets in uploads/ and
-    data/default/.  Returns JSON (called via fetch from the UI).
+    Run ADIE self-evaluation across available datasets.
+    Returns JSON (called via fetch from the UI).
     """
     datasets = []
 
-    # Collect datasets from uploads folder
+    # Collect datasets from uploads folder — skip isolated session files and artifacts
+    SKIP_NAMES = {
+        'current_dataset.csv', 'cleaned_dataset.csv', 'analysis_report.txt'
+    }
     for fname in os.listdir(UPLOAD_FOLDER):
-        if fname.endswith('.csv') and not fname.startswith('_'):
-            # Skip internal artefact files
-            skip_names = {
-                'current_dataset.csv', 'cleaned_dataset.csv',
-                'analysis_report.txt'
-            }
-            if fname in skip_names:
-                continue
-            datasets.append({
-                "name": fname,
-                "path": os.path.join(UPLOAD_FOLDER, fname),
-                "target": None
-            })
+        if not fname.endswith('.csv'):
+            continue
+        if fname.startswith('_'):
+            continue
+        # Skip UUID-prefixed session files (e.g. abc123_raw.csv, abc123_cleaned.csv)
+        if '_raw.csv' in fname or '_cleaned.csv' in fname:
+            continue
+        if fname in SKIP_NAMES:
+            continue
+        datasets.append({
+            "name": fname,
+            "path": os.path.join(UPLOAD_FOLDER, fname),
+            "target": None
+        })
 
     # Collect from version folders (use after_clean.csv)
     for entry in os.scandir(UPLOAD_FOLDER):
@@ -670,7 +880,8 @@ def evaluate():
     eval_results = evaluate_system(datasets)
 
     # Persist for PDF report
-    _save_json('eval_results.json', eval_results)
+    dataset_id = session.get('dataset_id')
+    _save_json('eval_results.json', eval_results, dataset_id)
 
     return jsonify(eval_results)
 
@@ -682,7 +893,15 @@ def evaluate():
 @app.route('/download_cleaned')
 @login_required
 def download_cleaned():
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'cleaned_dataset.csv')
+    dataset_id = session.get('dataset_id')
+    # Prefer isolated path, fall back to global
+    if dataset_id:
+        filepath = _cleaned_path(dataset_id)
+        if not os.path.exists(filepath):
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'cleaned_dataset.csv')
+    else:
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'cleaned_dataset.csv')
+
     if os.path.exists(filepath):
         return send_file(filepath, as_attachment=True, download_name='cleaned_dataset.csv')
     flash('Cleaned dataset not found')
@@ -693,25 +912,23 @@ def download_cleaned():
 @login_required
 def download_report():
     """Generate and serve a PDF report (falls back to TXT if reportlab missing)."""
-    diag_path = os.path.join(UPLOAD_FOLDER, 'diagnostics.json')
-    res_path = os.path.join(UPLOAD_FOLDER, 'ml_results.json')
-    expert_path = os.path.join(UPLOAD_FOLDER, 'expert_report.json')
+    dataset_id = session.get('dataset_id')
 
-    if not (os.path.exists(diag_path) and os.path.exists(expert_path)):
+    diagnostics = _load_json('diagnostics.json', dataset_id) or {}
+    expert_report = _load_json('expert_report.json', dataset_id) or {}
+    eval_results = _load_json('eval_results.json', dataset_id)
+
+    if not diagnostics or not expert_report:
         flash('Please perform analysis before downloading the report.')
         return redirect(url_for('dashboard'))
-
-    diagnostics = _load_json('diagnostics.json') or {}
-    expert_report = _load_json('expert_report.json') or {}
-    eval_results = _load_json('eval_results.json')
 
     orig_results = {}
     cleaned_results = {}
     task_type = 'classification'
     selected_algo = 'All Algorithms'
 
-    if os.path.exists(res_path):
-        results_data = _load_json('ml_results.json') or {}
+    results_data = _load_json('ml_results.json', dataset_id) or {}
+    if results_data:
         orig_results = results_data.get('orig_results', {})
         cleaned_results = results_data.get('cleaned_results', {})
         task_type = results_data.get('task_type', 'classification')
